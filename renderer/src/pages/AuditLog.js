@@ -1,58 +1,76 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { toast } from 'react-hot-toast';
+import { ScrollText } from 'lucide-react';
+import { DateRange, EmptyState, PageHeader, Pill, SearchInput } from '../components/ui';
+import { daysAgo, fmtDateTime, isoDate } from '../lib/format';
 
-const ACTION_ICONS = {
-  CREATE: '➕', UPDATE: '✏️', DELETE: '🗑️', SALE: '🛒', REFUND: '↩️',
-  RECEIVE: '📥', BACKUP: '💾', RESTORE: '📂',
+const ACTIONS = {
+  SALE: { label: 'Sotuv', tone: 'success' },
+  REFUND: { label: 'Qaytarish', tone: 'danger' },
+  RECEIVE: { label: 'Kirim', tone: 'primary' },
+  CREATE: { label: 'Yaratildi', tone: 'primary' },
+  UPDATE: { label: 'Tahrirlandi', tone: 'neutral' },
+  DELETE: { label: 'Arxivlandi', tone: 'warning' },
+  PRICE: { label: "Narx o'zgardi", tone: 'warning' },
+  PAYMENT_IN: { label: "To'lov qabul", tone: 'success' },
+  PAYMENT_OUT: { label: 'Pul qaytarildi', tone: 'warning' },
+  ADJUST: { label: 'Hisob tuzatildi', tone: 'warning' },
+  SETTINGS: { label: 'Sozlamalar', tone: 'neutral' },
+  BACKUP: { label: 'Zaxira nusxa', tone: 'neutral' },
+  RESTORE: { label: 'Tiklash', tone: 'danger' },
 };
 
+const ENTITIES = { sale: 'Sotuv', stock: 'Ombor', product: 'Mahsulot', customer: 'Mijoz', system: 'Tizim' };
+
 export default function AuditLog() {
-  const [logs, setLogs] = useState([]);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [rows, setRows] = useState([]);
+  const [from, setFrom] = useState(daysAgo(6));
+  const [to, setTo] = useState(isoDate());
+  const [query, setQuery] = useState('');
+  const [action, setAction] = useState('');
 
-  useEffect(() => { load(); }, []);
+  const load = useCallback(async () => {
+    try { setRows(await window.api.audit.list({ dateFrom: from, dateTo: to, search: query, action: action || undefined })); } catch (err) { toast.error(err.message); }
+  }, [from, to, query, action]);
 
-  async function load() {
-    if (!window.api) return;
-    const data = await window.api.audit.getLog({ dateFrom, dateTo });
-    setLogs(data || []);
-  }
+  useEffect(() => {
+    const t = setTimeout(load, 150);
+    return () => clearTimeout(t);
+  }, [load]);
 
   return (
     <>
-      <div className="page-header">
-        <h2>📋 Audit log (Barcha harakatlar)</h2>
-      </div>
-      <div className="page-body">
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'flex-end' }}>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Dan:</label>
-            <input className="form-input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Gacha:</label>
-            <input className="form-input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-          </div>
-          <button className="btn btn-primary" onClick={load}>🔍 Qidirish</button>
+      <PageHeader title="Harakatlar jurnali" subtitle="Dasturdagi har bir muhim amal o'chirib bo'lmaydigan tarzda qayd qilinadi" />
+      <div className="content">
+        <div className="toolbar">
+          <DateRange from={from} to={to} onChange={(a, b) => { setFrom(a); setTo(b); }} />
+          <SearchInput value={query} onChange={setQuery} placeholder="Tafsilot bo'yicha qidirish" />
+          <select className="input" style={{ width: 200 }} value={action} onChange={(e) => setAction(e.target.value)}>
+            <option value="">Barcha amallar</option>
+            {Object.entries(ACTIONS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
         </div>
-
-        <div className="table-container">
-          <table>
-            <thead><tr><th>Vaqt</th><th>Harakat</th><th>Bo'lim</th><th>Tafsilot</th></tr></thead>
-            <tbody>
-              {logs.map(log => (
-                <tr key={log.id}>
-                  <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{new Date(log.created_at).toLocaleString('uz-UZ')}</td>
-                  <td><span className="badge-blue">{ACTION_ICONS[log.action] || '📌'} {log.action}</span></td>
-                  <td style={{ textTransform: 'capitalize' }}>{log.entity}</td>
-                  <td style={{ fontSize: 13 }}>{log.details}</td>
-                </tr>
-              ))}
-              {logs.length === 0 && (
-                <tr><td colSpan="4" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>Hali yozuv yo'q</td></tr>
-              )}
-            </tbody>
-          </table>
+        <div className="table-wrap">
+          {rows.length === 0 ? (
+            <EmptyState icon={ScrollText} title="Yozuv topilmadi" />
+          ) : (
+            <table className="table table-sm">
+              <thead><tr><th>Vaqt</th><th>Amal</th><th>Bo'lim</th><th>Tafsilot</th></tr></thead>
+              <tbody>
+                {rows.map((r) => {
+                  const a = ACTIONS[r.action] || { label: r.action, tone: 'neutral' };
+                  return (
+                    <tr key={r.id}>
+                      <td className="nowrap secondary">{fmtDateTime(r.created_at)}</td>
+                      <td><Pill tone={a.tone}>{a.label}</Pill></td>
+                      <td className="secondary">{ENTITIES[r.entity] || r.entity}</td>
+                      <td>{r.details}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </>

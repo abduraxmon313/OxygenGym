@@ -1,45 +1,71 @@
 import React from 'react';
+import {
+  AlertTriangle, BarChart3, LayoutDashboard, Package, PackagePlus, Receipt, ScrollText, Settings, ShoppingCart, Users,
+} from 'lucide-react';
 
-const NAV_ITEMS = [
-  { id: 'dashboard', icon: '📊', label: 'Bosh panel' },
-  { id: 'pos', icon: '🛒', label: 'Sotuv (POS)' },
-  { id: 'products', icon: '📦', label: 'Mahsulotlar' },
-  { id: 'stock', icon: '📥', label: 'Kirim (Priyomka)' },
-  { id: 'sales', icon: '🧾', label: 'Sotuvlar tarixi' },
-  { id: 'customers', icon: '👥', label: 'Mijozlar' },
-  { id: 'suppliers', icon: '🚛', label: 'Yetkazib beruvchilar' },
-  { id: 'alerts', icon: '🔔', label: 'Ogohlantirishlar', alertKey: true },
-  { id: 'reports', icon: '📈', label: 'Hisobotlar' },
-  { id: 'audit', icon: '📋', label: 'Audit log' },
-  { id: 'settings', icon: '⚙️', label: 'Sozlamalar' },
+export const NAV_GROUPS = [
+  {
+    title: 'Asosiy',
+    items: [
+      { id: 'dashboard', label: 'Bosh panel', icon: LayoutDashboard },
+      { id: 'pos', label: 'Sotuv', icon: ShoppingCart },
+    ],
+  },
+  {
+    title: 'Ombor',
+    items: [
+      { id: 'products', label: 'Mahsulotlar', icon: Package },
+      { id: 'stock', label: 'Kirim', icon: PackagePlus },
+      { id: 'alerts', label: 'Ogohlantirishlar', icon: AlertTriangle, badge: true },
+    ],
+  },
+  {
+    title: 'Savdo',
+    items: [
+      { id: 'sales', label: 'Sotuvlar', icon: Receipt },
+      { id: 'customers', label: 'Mijozlar', icon: Users },
+    ],
+  },
+  {
+    title: 'Tahlil',
+    items: [
+      { id: 'reports', label: 'Hisobotlar', icon: BarChart3 },
+      { id: 'audit', label: 'Harakatlar jurnali', icon: ScrollText },
+    ],
+  },
+  {
+    title: 'Tizim',
+    items: [{ id: 'settings', label: 'Sozlamalar', icon: Settings }],
+  },
 ];
 
-export default function Sidebar({ page, setPage, alerts }) {
-  const totalAlerts = (alerts?.lowStock || 0) + (alerts?.expiring || 0);
-
+export default function Sidebar({ page, onNavigate, alertCount, shopName, version }) {
   return (
     <aside className="sidebar">
-      <div className="sidebar-logo">
-        <span className="logo-icon">🏋️</span>
-        <h1>OxygenGym</h1>
+      <div className="sidebar-brand">
+        <div className="brand-mark">O₂</div>
+        <div>
+          <div className="brand-name">OxygenGym</div>
+          <div className="brand-sub">Savdo va ombor tizimi</div>
+        </div>
       </div>
       <nav className="sidebar-nav">
-        {NAV_ITEMS.map((item) => (
-          <button
-            key={item.id}
-            className={`nav-item ${page === item.id ? 'active' : ''}`}
-            onClick={() => setPage(item.id)}
-          >
-            <span className="icon">{item.icon}</span>
-            <span>{item.label}</span>
-            {item.alertKey && totalAlerts > 0 && (
-              <span className="badge">{totalAlerts}</span>
-            )}
-          </button>
+        {NAV_GROUPS.map((group) => (
+          <div key={group.title} className="nav-group">
+            <div className="nav-group-title">{group.title}</div>
+            {group.items.map(({ id, label, icon: Icon, badge }) => (
+              <button key={id} type="button" className={`nav-item${page === id ? ' active' : ''}`} onClick={() => onNavigate(id)}>
+                <Icon size={18} strokeWidth={1.9} />
+                <span>{label}</span>
+                {badge && alertCount > 0 && <span className="nav-badge">{alertCount > 99 ? '99+' : alertCount}</span>}
+              </button>
+            ))}
+          </div>
         ))}
       </nav>
-      <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)' }}>
-        OxygenGym v1.0.0
+      <div className="sidebar-footer">
+        <div className="shop">{shopName || 'OxygenGym'}</div>
+        <div className="ver">Versiya {version || '—'}</div>
       </div>
     </aside>
   );

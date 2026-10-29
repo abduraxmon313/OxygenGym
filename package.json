@@ -1,7 +1,7 @@
 {
   "name": "oxygengym",
-  "version": "1.0.0",
-  "description": "OxygenGym — Zal uchun mukammal sotuv dasturi",
+  "version": "1.1.0",
+  "description": "OxygenGym — zal bari uchun savdo va ombor dasturi",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -10,7 +10,7 @@
     "build:react": "cd renderer && npm run build",
     "postinstall": "electron-builder install-app-deps"
   },
-  "author": "OxygenGym Team",
+  "author": "OxygenGym",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -30,12 +30,6 @@
       "assets/**/*",
       "node_modules/**/*"
     ],
-    "extraResources": [
-      {
-        "from": "assets",
-        "to": "assets"
-      }
-    ],
     "win": {
       "target": [
         {
@@ -51,7 +45,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "OxygenGym"
+      "shortcutName": "OxygenGym",
+      "artifactName": "OxygenGym-Setup-${version}.${ext}"
     },
     "publish": [
       {
@@ -63,13 +58,12 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.6.0",
-    "electron-updater": "^6.3.9",
     "electron-log": "^5.2.4",
-    "date-fns": "^4.1.0"
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
+    "cross-env": "^7.0.3",
     "electron": "^33.2.0",
-    "electron-builder": "^25.1.8",
-    "cross-env": "^7.0.3"
+    "electron-builder": "^25.1.8"
   }
 }

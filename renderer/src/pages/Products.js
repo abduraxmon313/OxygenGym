@@ -1,253 +1,156 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-hot-toast';
-import Modal from '../components/Modal';
-import BarcodeScanner from '../components/BarcodeScanner';
+import { Archive, Copy, Package, Pencil, Plus } from 'lucide-react';
+import { CategorySelect, EmptyState, PageHeader, Pill, SearchInput, Segmented } from '../components/ui';
+import ProductForm from '../components/ProductForm';
+import { useConfirm } from '../components/ConfirmDialog';
+import { categoryLabel, money, productMeta, som } from '../lib/format';
 
-function formatMoney(n) { return Number(n || 0).toLocaleString('uz-UZ'); }
-
-const EMPTY_PRODUCT = {
-  name: '', barcode: '', category_id: '', brand: '', description: '',
-  cost_price: '', sell_price: '', min_stock: 3, weight: '', flavor: '', unit: 'dona',
-};
-
-export default function Products({ onDataChange }) {
+export default function Products({ refreshAlerts, settings }) {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [search, setSearch] = useState('');
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(EMPTY_PRODUCT);
-  const [editId, setEditId] = useState(null);
-  const [showScanner, setShowScanner] = useState(false);
+  const [brands, setBrands] = useState([]);
+  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState('');
+  const [stockFilter, setStockFilter] = useState('all');
+  const [form, setForm] = useState(null); // { mode, source }
+  const confirm = useConfirm();
 
-  useEffect(() => { load(); }, []);
-
-  async function load() {
-    if (!window.api) return;
-    const [prods, cats] = await Promise.all([
-      window.api.products.getAll(),
-      window.api.products.getCategories(),
-    ]);
-    setProducts(prods || []);
-    setCategories(cats || []);
-  }
-
-  function openNew() {
-    setForm(EMPTY_PRODUCT);
-    setEditId(null);
-    setShowForm(true);
-  }
-
-  function openEdit(product) {
-    setForm({
-      name: product.name,
-      barcode: product.barcode || '',
-      category_id: product.category_id || '',
-      brand: product.brand || '',
-      description: product.description || '',
-      cost_price: product.cost_price,
-      sell_price: product.sell_price,
-      min_stock: product.min_stock,
-      weight: product.weight || '',
-      flavor: product.flavor || '',
-      unit: product.unit || 'dona',
-    });
-    setEditId(product.id);
-    setShowForm(true);
-  }
-
-  async function saveProduct() {
-    if (!form.name || !form.sell_price) return toast.error("Nom va sotuv narxini kiriting!");
+  const load = useCallback(async () => {
     try {
-      if (editId) {
-        await window.api.products.update(editId, form);
-        toast.success("✅ Mahsulot yangilandi");
-      } else {
-        await window.api.products.create(form);
-        toast.success("✅ Yangi mahsulot yaratildi");
-      }
-      setShowForm(false);
-      load();
-      if (onDataChange) onDataChange();
+      const [p, c, b] = await Promise.all([window.api.products.getAll(), window.api.products.categories(), window.api.products.brands()]);
+      setProducts(p);
+      setCategories(c);
+      setBrands(b);
     } catch (err) {
-      toast.error("Xatolik: " + err.message);
+      toast.error(err.message);
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return products.filter((p) => {
+      if (category && p.category_id !== category && p.category_parent_id !== category) return false;
+      if (stockFilter === 'low' && !(p.stock > 0 && p.stock <= p.min_stock)) return false;
+      if (stockFilter === 'out' && p.stock > 0) return false;
+      if (!q) return true;
+      return [p.name, p.code, p.brand, p.flavor, p.weight].some((v) => v && String(v).toLowerCase().includes(q));
+    });
+  }, [products, query, category, stockFilter]);
+
+  const totals = useMemo(() => filtered.reduce((t, p) => ({
+    units: t.units + Math.max(0, p.stock),
+    value: t.value + Math.max(0, p.stock) * p.cost_price,
+  }), { units: 0, value: 0 }), [filtered]);
+
+  async function archive(p) {
+    const ok = await confirm({
+      title: 'Mahsulotni arxivlash',
+      message: `"${p.name}" sotuv va ro'yxatlardan olib tashlanadi.${p.stock > 0 ? `\nOmborda hali ${p.stock} ${p.unit} bor.` : ''}\nSotuvlar tarixi saqlanib qoladi.`,
+      confirmText: 'Arxivlash',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await window.api.products.remove(p.id);
+      toast.success('Mahsulot arxivlandi');
+      load();
+      refreshAlerts();
+    } catch (err) {
+      toast.error(err.message);
     }
   }
 
-  async function deleteProduct(id, name) {
-    if (!window.confirm(`"${name}" ni o'chirmoqchimisiz?`)) return;
-    await window.api.products.delete(id);
-    toast.success("O'chirildi");
-    load();
-    if (onDataChange) onDataChange();
-  }
-
-  const filtered = search
-    ? products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode && p.barcode.includes(search)) || (p.brand && p.brand.toLowerCase().includes(search.toLowerCase())))
-    : products;
-
-  // Flatten categories for select
-  const flatCats = [];
-  categories.forEach(cat => {
-    flatCats.push({ id: cat.id, name: cat.icon + ' ' + cat.name, level: 0 });
-    (cat.children || []).forEach(ch => flatCats.push({ id: ch.id, name: '  └ ' + ch.name, level: 1 }));
-  });
-
   return (
     <>
-      <div className="page-header">
-        <h2>📦 Mahsulotlar ({products.length})</h2>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-primary" onClick={openNew}>➕ Yangi mahsulot</button>
-        </div>
-      </div>
-      <div className="page-body">
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-          <div className="search-bar" style={{ flex: 1 }}>
-            <span className="search-icon">🔍</span>
-            <input placeholder="Qidirish (nom, barcode, brend)..." value={search} onChange={(e) => setSearch(e.target.value)} />
+      <PageHeader
+        title="Mahsulotlar"
+        subtitle={`${products.length} ta faol mahsulot`}
+        actions={<button type="button" className="btn btn-primary" onClick={() => setForm({ mode: 'create' })}><Plus size={16} />Yangi mahsulot</button>}
+      />
+      <div className="content">
+        <div className="toolbar">
+          <SearchInput value={query} onChange={setQuery} placeholder="Nomi, brend, ta'm yoki kod" />
+          <div style={{ width: 260 }}>
+            <CategorySelect categories={categories} value={category} onChange={setCategory} emptyLabel="Barcha kategoriyalar" />
           </div>
-          <button className="btn btn-outline" onClick={() => setShowScanner(true)}>📷 Skanerlash</button>
-        </div>
-
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Mahsulot</th>
-                <th>Barcode</th>
-                <th>Kategoriya</th>
-                <th>Brend</th>
-                <th>Kelish narxi</th>
-                <th>Sotuv narxi</th>
-                <th>Foyda</th>
-                <th>Qoldiq</th>
-                <th>Amallar</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(p => {
-                const profit = p.sell_price - p.cost_price;
-                const margin = p.sell_price > 0 ? ((profit / p.sell_price) * 100).toFixed(1) : 0;
-                return (
-                  <tr key={p.id}>
-                    <td style={{ fontWeight: 600 }}>{p.name}</td>
-                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{p.barcode || '—'}</td>
-                    <td>{p.category_name || '—'}</td>
-                    <td>{p.brand || '—'}</td>
-                    <td>{formatMoney(p.cost_price)}</td>
-                    <td style={{ fontWeight: 600 }}>{formatMoney(p.sell_price)}</td>
-                    <td style={{ color: 'var(--success)' }}>{formatMoney(profit)} ({margin}%)</td>
-                    <td>
-                      <span className={p.stock <= 0 ? 'badge-danger' : p.stock <= p.min_stock ? 'badge-warning' : 'badge-success'}>
-                        {p.stock} {p.unit}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button className="btn btn-outline btn-sm" onClick={() => openEdit(p)}>✏️</button>
-                        <button className="btn btn-outline btn-sm" onClick={() => deleteProduct(p.id, p.name)} style={{ color: 'var(--danger)' }}>🗑️</button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {filtered.length === 0 && (
-                <tr><td colSpan="9" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>Mahsulot topilmadi</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Product Form Modal */}
-      {showForm && (
-        <Modal title={editId ? '✏️ Mahsulotni tahrirlash' : '➕ Yangi mahsulot'} onClose={() => setShowForm(false)} large>
-          <div className="grid-2">
-            <div className="form-group">
-              <label>Mahsulot nomi *</label>
-              <input className="form-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Masalan: Creatine Monohydrate 300g" />
-            </div>
-            <div className="form-group">
-              <label>Barcode</label>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <input className="form-input" value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} placeholder="748927056112" />
-                <button className="btn btn-outline btn-sm" onClick={() => setShowScanner(true)}>📷</button>
-              </div>
-            </div>
-          </div>
-          <div className="grid-2">
-            <div className="form-group">
-              <label>Kategoriya</label>
-              <select className="form-input" value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
-                <option value="">Tanlang...</option>
-                {flatCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Brend</label>
-              <input className="form-input" value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="Optimum Nutrition" />
-            </div>
-          </div>
-          <div className="grid-3">
-            <div className="form-group">
-              <label>Kelish narxi (so'm) *</label>
-              <input className="form-input" type="number" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: Number(e.target.value) })} />
-            </div>
-            <div className="form-group">
-              <label>Sotuv narxi (so'm) *</label>
-              <input className="form-input" type="number" value={form.sell_price} onChange={(e) => setForm({ ...form, sell_price: Number(e.target.value) })} />
-            </div>
-            <div className="form-group">
-              <label>Min. qoldiq (ogohlantirish)</label>
-              <input className="form-input" type="number" value={form.min_stock} onChange={(e) => setForm({ ...form, min_stock: Number(e.target.value) })} />
-            </div>
-          </div>
-          <div className="grid-3">
-            <div className="form-group">
-              <label>Og'irlik/Hajm</label>
-              <input className="form-input" value={form.weight} onChange={(e) => setForm({ ...form, weight: e.target.value })} placeholder="300g, 2.27kg" />
-            </div>
-            <div className="form-group">
-              <label>Ta'm/Variant</label>
-              <input className="form-input" value={form.flavor} onChange={(e) => setForm({ ...form, flavor: e.target.value })} placeholder="Chocolate, Vanilla" />
-            </div>
-            <div className="form-group">
-              <label>O'lchov birligi</label>
-              <select className="form-input" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })}>
-                <option value="dona">Dona</option>
-                <option value="kg">Kilogramm</option>
-                <option value="litr">Litr</option>
-                <option value="paket">Paket</option>
-              </select>
-            </div>
-          </div>
-          <div className="form-group">
-            <label>Tavsif</label>
-            <textarea className="form-input" rows="2" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Qo'shimcha ma'lumot..." />
-          </div>
-          {form.sell_price > 0 && form.cost_price > 0 && (
-            <div style={{ background: 'var(--success-light)', padding: 12, borderRadius: 8, marginBottom: 16 }}>
-              <strong style={{ color: 'var(--success)' }}>
-                📈 Foyda: {formatMoney(form.sell_price - form.cost_price)} so'm ({((form.sell_price - form.cost_price) / form.sell_price * 100).toFixed(1)}%)
-              </strong>
-            </div>
-          )}
-          <div className="modal-footer">
-            <button className="btn btn-outline" onClick={() => setShowForm(false)}>Bekor</button>
-            <button className="btn btn-primary" onClick={saveProduct}>
-              {editId ? '💾 Saqlash' : '➕ Yaratish'}
-            </button>
-          </div>
-        </Modal>
-      )}
-
-      {showScanner && (
-        <Modal title="📷 Barcode skanerlash" onClose={() => setShowScanner(false)}>
-          <BarcodeScanner
-            onScan={(barcode) => { setForm({ ...form, barcode }); setShowScanner(false); toast.success('Barcode: ' + barcode); }}
-            onClose={() => setShowScanner(false)}
+          <Segmented
+            options={[{ id: 'all', label: 'Hammasi' }, { id: 'low', label: 'Kam qolgan' }, { id: 'out', label: 'Tugagan' }]}
+            value={stockFilter}
+            onChange={setStockFilter}
           />
-        </Modal>
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="table-wrap">
+            <EmptyState
+              icon={Package}
+              title={products.length ? 'Mahsulot topilmadi' : "Hali mahsulot qo'shilmagan"}
+              text={products.length ? "Filtrlarni o'zgartirib ko'ring" : "Birinchi mahsulotni qo'shing. Har bir ta'm yoki hajm alohida mahsulot sifatida yaratiladi."}
+              action={!products.length && <button type="button" className="btn btn-primary" onClick={() => setForm({ mode: 'create' })}><Plus size={16} />Mahsulot qo'shish</button>}
+            />
+          </div>
+        ) : (
+          <>
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Kod</th>
+                    <th>Mahsulot</th>
+                    <th>Kategoriya</th>
+                    <th className="num">Tannarx</th>
+                    <th className="num">Sotuv narxi</th>
+                    <th className="num">Ustama</th>
+                    <th className="num">Qoldiq</th>
+                    <th className="actions" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((p) => {
+                    const markup = p.cost_price > 0 ? Math.round(((p.sell_price - p.cost_price) / p.cost_price) * 100) : null;
+                    const tone = p.stock <= 0 ? 'danger' : p.stock <= p.min_stock ? 'warning' : 'success';
+                    return (
+                      <tr key={p.id} className="clickable" onClick={() => setForm({ mode: 'edit', source: p })}>
+                        <td className="mono secondary">{p.code}</td>
+                        <td><div className="cell-title">{p.name}</div><div className="cell-sub">{productMeta(p) || '—'}</div></td>
+                        <td className="secondary">{categoryLabel(p)}</td>
+                        <td className="num secondary">{money(p.cost_price)}</td>
+                        <td className="num strong">{money(p.sell_price)}</td>
+                        <td className={`num ${markup !== null && markup < 0 ? 'text-danger' : 'secondary'}`}>{markup === null ? '—' : `${markup}%`}</td>
+                        <td className="num"><Pill tone={tone}>{p.stock} {p.unit}</Pill></td>
+                        <td className="actions" onClick={(e) => e.stopPropagation()}>
+                          <div className="row">
+                            <button type="button" className="btn btn-ghost btn-icon btn-sm" title="Tahrirlash" onClick={() => setForm({ mode: 'edit', source: p })}><Pencil size={15} /></button>
+                            <button type="button" className="btn btn-ghost btn-icon btn-sm" title="Boshqa ta'm/hajm uchun nusxa" onClick={() => setForm({ mode: 'duplicate', source: p })}><Copy size={15} /></button>
+                            <button type="button" className="btn btn-ghost btn-icon btn-sm" title="Arxivlash" onClick={() => archive(p)}><Archive size={15} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="table-footer-note">
+              <span>{filtered.length} ta mahsulot · {totals.units} dona omborda</span>
+              <span>Ombor qiymati (tannarx): <strong className="tnum" style={{ color: 'var(--text)' }}>{som(totals.value)}</strong></span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {form && (
+        <ProductForm
+          mode={form.mode}
+          source={form.source}
+          categories={categories}
+          brands={brands}
+          defaultMinStock={Number(settings.lowStockAlert) || 3}
+          onClose={() => setForm(null)}
+          onSaved={() => { setForm(null); load(); refreshAlerts(); }}
+        />
       )}
     </>
   );

@@ -1,127 +1,70 @@
-# 🏋️ OxygenGym — Zal uchun sotuv dasturi
+# OxygenGym
 
-**OxygenGym** — supplement do'koni (zal) uchun to'liq sotuv va ombor boshqaruv dasturi. Windows kompyuter uchun .EXE ilova.
+Zal bari uchun savdo va ombor dasturi: protein, kreatin, vitaminlar, ichimliklar va aksessuarlar sotuvi. Windows uchun. Ma'lumotlar kompyuterning o'zida saqlanadi, internet faqat yangilanish uchun kerak.
 
-## ✨ Imkoniyatlar
+## O'rnatish
 
-- 🛒 **POS (Sotuv)** — tez sotuv, barcode skanerlash (kamera orqali)
-- 📦 **Mahsulotlar** — to'liq katalog, kategoriyalar, brendlar
-- 📥 **Kirim (Priyomka)** — mahsulot qabul qilish, partiya (lot) kuzatuvi
-- 📅 **FEFO tizimi** — yaroqlik muddati bo'yicha avtomatik sotuv (First Expired First Out)
-- 👥 **Mijozlar** — loyalty ball, darajalar (Bronze/Silver/Gold/Diamond)
-- 🧾 **Sotuvlar tarixi** — barcha sotuvlar, qaytarish (refund)
-- 📈 **Hisobotlar** — kunlik sotuv, mahsulot bo'yicha, foyda-zarar
-- 🔔 **Ogohlantirishlar** — kam qolgan mahsulot, muddati yaqin partiyalar
-- 📋 **Audit log** — barcha harakatlar qayd qilinadi
-- 💾 **Zaxira nusxa** — backup va restore
-- 🔄 **Avtomatik yangilash** — GitHub'dan yangi versiyani yuklab olish
-- 🚛 **Yetkazib beruvchilar** — bazasi va tarix
-- ⚙️ **Sozlamalar** — do'kon, loyalty, ogohlantirishlar
+1. [Releases](https://github.com/abduraxmon313/OxygenGym/releases/latest) sahifasidan `OxygenGym-Setup-x.y.z.exe` ni yuklab oling.
+2. Faylni ishga tushiring va o'rnating.
 
-## 💻 Texnologiyalar
+Keyingi versiyalar dastur ichidan yangilanadi. Yangi versiya chiqqanda o'ng yuqori burchakda xabar chiqadi.
 
-- **Electron** — Windows desktop ilova
-- **React** — foydalanuvchi interfeysi
-- **SQLite** — lokal ma'lumotlar bazasi (laptopda saqlanadi)
-- **better-sqlite3** — tez va ishonchli DB
-- **@zxing** — kamera orqali barcode skanerlash
+## Bo'limlar
 
-## 📥 O'rnatish (Foydalanuvchi uchun)
+| Bo'lim | Vazifasi |
+|---|---|
+| Bosh panel | Bugungi savdo, foyda, kassa tushumi, mijozlar qarzi, 14 kunlik grafik |
+| Sotuv | Kategoriya va qidiruv bo'yicha tez sotuv, chegirma, mijoz tanlash |
+| Mahsulotlar | Qo'lda kiritish: nom, kod, kategoriya, brend, hajm, ta'm, narx. Har bir ta'm/hajm alohida mahsulot |
+| Kirim | Kelgan mahsulot: miqdor, tannarx, sotuv narxi, yaroqlilik muddati |
+| Ogohlantirishlar | Kam qolgan va muddati yaqin/o'tgan partiyalar |
+| Sotuvlar | Barcha cheklar, to'lov tafsilotlari, qaytarish |
+| Mijozlar | Mijoz hisobi: avans, qarz, to'lovlar tarixi |
+| Hisobotlar | Kunlik savdo, mahsulotlar, kategoriyalar, kassa |
+| Harakatlar jurnali | Har bir muhim amal qayd qilinadi |
+| Sozlamalar | Do'kon, qarz qoidasi, ogohlantirishlar, zaxira nusxa, yangilanish |
 
-1. [Releases](https://github.com/abduraxmon313/OxygenGym/releases) sahifasiga o'ting
-2. Eng yangi versiyadan `OxygenGym-Setup-x.x.x.exe` ni yuklab oling
-3. .EXE ni ishga tushiring va o'rnating
-4. Ish stolida 🏋️ OxygenGym icon paydo bo'ladi — bosing va ishlating!
+## Mijoz hisobi qanday ishlaydi
 
-## 🔧 Dasturchi uchun (Development)
+Har bir mijozning bitta balansi bor:
 
-### Talab qilinadi:
-- Node.js 18+
-- npm
+- **Musbat balans — avans.** Mijoz oldindan pul qoldirgan. Xarid qilganda avval shu puldan yechiladi.
+- **Manfiy balans — qarz.** Mijoz qarzga olgan.
 
-### O'rnatish:
+Sotuvda to'lov tartibi:
+
+1. Mijozda avans bo'lsa, avval hisobdan yechiladi (summani o'zgartirish mumkin).
+2. Qolgan qismi naqd, karta, Click yoki Payme bilan to'lanadi (bir nechtasini birga ishlatish mumkin).
+3. Pul yetmasa, qolgani mijoz qarziga yoziladi. Mijozsiz sotuvda to'liq to'lov majburiy.
+4. Ortiqcha naqd pul qaytim sifatida beriladi yoki mijoz hisobiga yoziladi.
+
+Har bir mijozga qarz sharti qo'yiladi: cheklovsiz, limit bilan yoki qarz berilmaydi. Barcha harakatlar (to'lov, xarid, qaytarish, tuzatish) mijoz kartasida keyingi balansi bilan ko'rinadi. Balansni to'g'ridan-to'g'ri o'zgartirib bo'lmaydi, faqat sababi yozilgan "Tuzatish" orqali o'zgaradi.
+
+## Ma'lumotlar va zaxira nusxa
+
+- Baza: `%APPDATA%\OxygenGym\data\oxygengym.db`
+- Har kuni dastur ochilganda avtomatik nusxa olinadi va so'nggi 14 kunlik nusxa `%APPDATA%\OxygenGym\backups` papkasida saqlanadi.
+- Sozlamalar sahifasidan nusxani USB'ga saqlash va nusxadan tiklash mumkin.
+- Yangi versiya eski bazani avtomatik yangilaydi (migratsiya). Ma'lumotlar yo'qolmaydi.
+
+## Yangi versiya chiqarish
+
+1. `package.json` dagi `version` ni oshiring (masalan `1.1.0` → `1.2.0`).
+2. O'zgarishlarni `main` ga merge qiling.
+3. GitHub Actions `.exe` ni yig'adi va `v1.2.0` release'ni yaratadi. O'rnatilgan dasturlar yangilanishni o'zi topadi.
+
+## Dasturchi uchun
 
 ```bash
-# Repo yuklab olish
-git clone https://github.com/abduraxmon313/OxygenGym.git
-cd OxygenGym
-
-# Asosiy bog'liqliklarni o'rnatish
 npm install
-
-# React ilovasi bog'liqliklarini o'rnatish
 cd renderer && npm install && cd ..
-```
 
-### Ishga tushirish (development):
-
-```bash
-# React dev server ishga tushirish
+# ishlab chiqish: ikkita terminalda
 cd renderer && npm start
-
-# Boshqa terminalda Electron ishga tushirish
 npm run dev
-```
 
-### .EXE yaratish (build):
-
-```bash
-# React build + Electron build
+# Windows installer
 npm run build
 ```
 
-`dist/` papkasida .EXE fayl paydo bo'ladi.
-
-## 📁 Loyiha tuzilishi
-
-```
-OxygenGym/
-├── main.js              ← Electron asosiy fayl
-├── preload.js           ← IPC bridge (xavfsizlik)
-├── package.json         ← Asosiy konfiguratsiya
-├── src/
-│   └── database.js      ← SQLite ma'lumotlar bazasi
-├── renderer/            ← React ilova (UI)
-│   ├── public/
-│   └── src/
-│       ├── App.js       ← Asosiy komponent
-│       ├── components/  ← Qayta ishlatiladigan komponentlar
-│       │   ├── BarcodeScanner.js  ← Kamera barcode
-│       │   ├── Modal.js
-│       │   └── Sidebar.js
-│       ├── pages/       ← Sahifalar
-│       │   ├── Dashboard.js    ← Bosh panel
-│       │   ├── POS.js          ← Sotuv
-│       │   ├── Products.js     ← Mahsulotlar
-│       │   ├── StockReceive.js ← Kirim
-│       │   ├── Sales.js        ← Sotuvlar tarixi
-│       │   ├── Customers.js    ← Mijozlar
-│       │   ├── Suppliers.js    ← Yetkazib beruvchilar
-│       │   ├── Alerts.js       ← Ogohlantirishlar
-│       │   ├── Reports.js      ← Hisobotlar
-│       │   ├── AuditLog.js     ← Audit
-│       │   └── Settings.js     ← Sozlamalar
-│       └── styles/
-│           └── global.css      ← Dizayn
-└── assets/              ← Icon va rasmlar
-```
-
-## 💾 Ma'lumotlar qayerda saqlanadi?
-
-```
-C:\Users\[Siz]\AppData\Roaming\oxygengym\data\oxygengym.db
-```
-
-Ma'lumotlar laptop xotirasida saqlanadi. Internet kerak emas!
-
-## 🔄 Yangilash
-
-Ilova ochilganda GitHub'dan yangi versiyani tekshiradi. Agar yangi versiya bo'lsa — bildirishnoma chiqadi va bitta tugma bilan yangilaysiz.
-
-## 📄 Litsenziya
-
-MIT
-
----
-
-**OxygenGym** — Sizning zalingiz uchun yaratilgan! 🏋️
+Texnologiyalar: Electron, React, SQLite (better-sqlite3), electron-updater.

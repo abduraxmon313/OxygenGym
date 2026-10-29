@@ -1,98 +1,141 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import Sidebar from './components/Sidebar';
+import { ConfirmProvider } from './components/ConfirmDialog';
 import Dashboard from './pages/Dashboard';
 import POS from './pages/POS';
 import Products from './pages/Products';
 import StockReceive from './pages/StockReceive';
-import Customers from './pages/Customers';
 import Sales from './pages/Sales';
-import Reports from './pages/Reports';
-import Suppliers from './pages/Suppliers';
+import Customers from './pages/Customers';
 import Alerts from './pages/Alerts';
-import Settings from './pages/Settings';
+import Reports from './pages/Reports';
 import AuditLog from './pages/AuditLog';
+import Settings from './pages/Settings';
 
 const PAGES = {
   dashboard: Dashboard,
   pos: POS,
   products: Products,
   stock: StockReceive,
-  customers: Customers,
   sales: Sales,
-  reports: Reports,
-  suppliers: Suppliers,
+  customers: Customers,
   alerts: Alerts,
-  settings: Settings,
+  reports: Reports,
   audit: AuditLog,
+  settings: Settings,
 };
+
+function UpdateAvailableToast({ t, version, onDownload }) {
+  return (
+    <div className="toast-card">
+      <div className="toast-card-title">Yangi versiya mavjud: {version}</div>
+      <div className="toast-card-text">Yangilanganda barcha ma'lumotlar saqlanib qoladi.</div>
+      <div className="toast-card-actions">
+        <button type="button" className="btn btn-primary btn-sm" onClick={onDownload}>Yuklab olish</button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => toast.dismiss(t.id)}>Keyinroq</button>
+      </div>
+    </div>
+  );
+}
+
+function UpdateReadyToast({ t }) {
+  return (
+    <div className="toast-card">
+      <div className="toast-card-title">Yangilanish tayyor</div>
+      <div className="toast-card-text">O'rnatish uchun dastur qayta ishga tushadi.</div>
+      <div className="toast-card-actions">
+        <button type="button" className="btn btn-success btn-sm" onClick={() => window.api.updates.install()}>Qayta ishga tushirish</button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => toast.dismiss(t.id)}>Yopilganda o'rnatish</button>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [page, setPage] = useState('dashboard');
-  const [alerts, setAlerts] = useState({ lowStock: 0, expiring: 0 });
+  const [alertCount, setAlertCount] = useState(0);
+  const [settings, setSettings] = useState({});
+  const [info, setInfo] = useState({});
+  const downloading = useRef(false);
 
-  useEffect(() => {
-    loadAlerts();
-    const interval = setInterval(loadAlerts, 60000);
-
-    // Auto-update listener
-    if (window.api?.updates) {
-      window.api.updates.onAvailable((data) => {
-        toast((t) => (
-          <div>
-            <strong>🔔 Yangi versiya: v{data.version}</strong>
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <button className="btn btn-primary btn-sm" onClick={() => { window.api.updates.startDownload(); toast.dismiss(t.id); }}>
-                ⬇️ Yangilash
-              </button>
-              <button className="btn btn-outline btn-sm" onClick={() => toast.dismiss(t.id)}>
-                Keyinroq
-              </button>
-            </div>
-          </div>
-        ), { duration: Infinity });
-      });
-      window.api.updates.onDownloaded(() => {
-        toast((t) => (
-          <div>
-            <strong>✅ Yangilanish tayyor!</strong>
-            <p style={{ fontSize: 12, marginTop: 4 }}>Ilova qayta ishga tushiriladi</p>
-            <button className="btn btn-success btn-sm" style={{ marginTop: 8 }} onClick={() => window.api.updates.install()}>
-              🔄 Qayta ishga tushirish
-            </button>
-          </div>
-        ), { duration: Infinity });
-      });
+  const refreshAlerts = useCallback(async () => {
+    try {
+      const [low, expiring] = await Promise.all([window.api.products.lowStock(), window.api.products.expiring()]);
+      setAlertCount(low.length + expiring.length);
+    } catch (err) {
+      // ogohlantirishlar soni muhim emas — jim o'tkazamiz
     }
-
-    return () => clearInterval(interval);
   }, []);
 
-  async function loadAlerts() {
-    try {
-      if (!window.api) return;
-      const lowStock = await window.api.products.getLowStock();
-      const expiring = await window.api.products.getExpiring(30);
-      setAlerts({ lowStock: lowStock?.length || 0, expiring: expiring?.length || 0 });
-    } catch (e) { /* ignore */ }
-  }
+  const reloadSettings = useCallback(async () => {
+    try { setSettings(await window.api.settings.get()); } catch (err) { toast.error(err.message); }
+  }, []);
 
-  const PageComponent = PAGES[page] || Dashboard;
+  useEffect(() => {
+    refreshAlerts();
+    reloadSettings();
+    window.api.app.info().then(setInfo).catch(() => {});
+    const timer = setInterval(refreshAlerts, 60000);
+    return () => clearInterval(timer);
+  }, [refreshAlerts, reloadSettings]);
+
+  useEffect(() => {
+    const u = window.api.updates;
+    const startDownload = () => {
+      downloading.current = true;
+      toast.loading('Yangilanish yuklanmoqda…', { id: 'update' });
+      u.download().catch((err) => toast.error(err.message, { id: 'update' }));
+    };
+    const offs = [
+      u.onAvailable(({ version }) => toast.custom(
+        (t) => <UpdateAvailableToast t={t} version={version} onDownload={startDownload} />,
+        { id: 'update', duration: Infinity },
+      )),
+      u.onProgress(({ percent }) => toast.loading(`Yangilanish yuklanmoqda: ${percent}%`, { id: 'update' })),
+      u.onDownloaded(() => {
+        downloading.current = false;
+        toast.custom((t) => <UpdateReadyToast t={t} />, { id: 'update', duration: Infinity });
+      }),
+      u.onError(({ message }) => {
+        if (!downloading.current) return;
+        downloading.current = false;
+        toast.error(`Yangilashda xatolik: ${message}`, { id: 'update' });
+      }),
+    ];
+    return () => offs.forEach((off) => off && off());
+  }, []);
+
+  const Page = PAGES[page] || Dashboard;
 
   return (
-    <div className="app-layout">
-      <Sidebar page={page} setPage={setPage} alerts={alerts} />
-      <main className="main-content">
-        <PageComponent setPage={setPage} onDataChange={loadAlerts} />
-      </main>
+    <ConfirmProvider>
+      <div className="app">
+        <Sidebar page={page} onNavigate={setPage} alertCount={alertCount} shopName={settings.shopName} version={info.version} />
+        <main className="main">
+          <Page
+            navigate={setPage}
+            refreshAlerts={refreshAlerts}
+            settings={settings}
+            reloadSettings={reloadSettings}
+            appInfo={info}
+          />
+        </main>
+      </div>
       <Toaster
         position="top-right"
+        gutter={10}
         toastOptions={{
-          style: { background: '#1e293b', color: '#f1f5f9', border: '1px solid #334155' },
-          success: { iconTheme: { primary: '#10b981', secondary: '#fff' } },
-          error: { iconTheme: { primary: '#ef4444', secondary: '#fff' } },
+          duration: 3500,
+          style: {
+            background: '#fff', color: '#101828', border: '1px solid #e4e7ec', borderRadius: 10,
+            boxShadow: '0 12px 16px -4px rgba(16,24,40,.08), 0 4px 6px -2px rgba(16,24,40,.03)',
+            fontSize: 13.5, padding: '10px 14px', maxWidth: 420,
+          },
+          success: { iconTheme: { primary: '#079455', secondary: '#fff' } },
+          error: { duration: 5000, iconTheme: { primary: '#d92d20', secondary: '#fff' } },
         }}
       />
-    </div>
+    </ConfirmProvider>
   );
 }

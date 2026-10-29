@@ -1,345 +1,264 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
-import BarcodeScanner from '../components/BarcodeScanner';
-import Modal from '../components/Modal';
+import { Minus, PackageSearch, Plus, ShoppingCart, Trash2, UserRound, X } from 'lucide-react';
+import { EmptyState, Pill, SearchInput, Segmented } from '../components/ui';
+import MoneyInput from '../components/MoneyInput';
+import CustomerPicker from '../components/CustomerPicker';
+import PaymentModal from '../components/PaymentModal';
+import { useConfirm } from '../components/ConfirmDialog';
+import { balanceState, categoryLabel, initials, money, productMeta, som } from '../lib/format';
 
-function formatMoney(n) {
-  return Number(n || 0).toLocaleString('uz-UZ');
+function stockTone(p) {
+  if (p.stock <= 0) return 'danger';
+  if (p.stock <= p.min_stock) return 'warning';
+  return 'neutral';
 }
 
-export default function POS({ onDataChange }) {
+export default function POS({ refreshAlerts, settings }) {
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [category, setCategory] = useState('all');
+  const [query, setQuery] = useState('');
   const [cart, setCart] = useState([]);
-  const [search, setSearch] = useState('');
-  const [showScanner, setShowScanner] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState('cash');
-  const [discount, setDiscount] = useState(0);
+  const [discount, setDiscount] = useState('');
   const [discountType, setDiscountType] = useState('percent');
   const [customer, setCustomer] = useState(null);
-  const [customers, setCustomers] = useState([]);
-  const [showCustomerSearch, setShowCustomerSearch] = useState(false);
-  const [customerSearch, setCustomerSearch] = useState('');
-  const [showPayment, setShowPayment] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [paying, setPaying] = useState(false);
   const searchRef = useRef(null);
+  const confirm = useConfirm();
 
-  useEffect(() => { loadProducts(); }, []);
-
-  async function loadProducts() {
-    if (!window.api) return;
-    const data = await window.api.products.getAll();
-    setProducts(data || []);
-  }
-
-  async function handleBarcodeScan(barcode) {
-    setShowScanner(false);
-    if (!window.api) return;
-    const product = await window.api.products.getByBarcode(barcode);
-    if (product) {
-      addToCart(product);
-      toast.success(`✅ ${product.name} qo'shildi`);
-    } else {
-      toast.error(`❌ Barcode topilmadi: ${barcode}`);
+  const load = useCallback(async () => {
+    try {
+      const [p, c] = await Promise.all([window.api.products.getAll(), window.api.products.categories()]);
+      setProducts(p);
+      setCategories(c);
+    } catch (err) {
+      toast.error(err.message);
     }
-  }
+  }, []);
+  useEffect(() => { load(); }, [load]);
 
-  function addToCart(product) {
-    if (product.stock <= 0) {
-      toast.error(`❌ ${product.name} — omborda qolmagan!`);
-      return;
-    }
-    setCart(prev => {
-      const existing = prev.find(i => i.product_id === product.id);
-      if (existing) {
-        if (existing.quantity >= product.stock) {
-          toast.error(`⚠️ Omborda faqat ${product.stock} dona bor`);
-          return prev;
-        }
-        return prev.map(i => i.product_id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
-      }
-      return [...prev, {
-        product_id: product.id,
-        name: product.name,
-        price: product.sell_price,
-        stock: product.stock,
-        quantity: 1,
-      }];
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return products.filter((p) => {
+      if (category !== 'all' && (p.category_parent_id || p.category_id) !== category) return false;
+      if (!q) return true;
+      return [p.name, p.code, p.brand, p.flavor, p.weight].some((v) => v && String(v).toLowerCase().includes(q));
     });
+  }, [products, category, query]);
+
+  const inCart = useMemo(() => Object.fromEntries(cart.map((i) => [i.product_id, i.quantity])), [cart]);
+  const chips = categories.filter((c) => c.product_count > 0);
+
+  function add(p) {
+    if (p.stock <= 0) { toast.error(`"${p.name}" omborda qolmagan`); return; }
+    const current = inCart[p.id] || 0;
+    if (current >= p.stock) { toast.error(`Omborda faqat ${p.stock} ${p.unit || 'dona'} bor`); return; }
+    setCart((prev) => (current
+      ? prev.map((i) => (i.product_id === p.id ? { ...i, quantity: i.quantity + 1 } : i))
+      : [...prev, { product_id: p.id, name: p.name, meta: productMeta(p), price: p.sell_price, stock: p.stock, unit: p.unit || 'dona', quantity: 1 }]));
   }
 
-  function updateQty(productId, delta) {
-    setCart(prev => prev.map(i => {
-      if (i.product_id !== productId) return i;
-      const newQty = i.quantity + delta;
-      if (newQty <= 0) return null;
-      if (newQty > i.stock) { toast.error(`Omborda faqat ${i.stock} dona bor`); return i; }
-      return { ...i, quantity: newQty };
-    }).filter(Boolean));
+  function setQty(id, raw) {
+    const item = cart.find((i) => i.product_id === id);
+    if (!item) return;
+    let qty = Math.floor(Number(raw) || 0);
+    if (qty > item.stock) { toast.error(`Omborda faqat ${item.stock} ${item.unit} bor`); qty = item.stock; }
+    if (qty < 1) qty = 1;
+    setCart((prev) => prev.map((i) => (i.product_id === id ? { ...i, quantity: qty } : i)));
   }
 
-  function removeFromCart(productId) {
-    setCart(prev => prev.filter(i => i.product_id !== productId));
+  const remove = (id) => setCart((prev) => prev.filter((i) => i.product_id !== id));
+
+  async function clearCart() {
+    if (!cart.length) return;
+    const ok = await confirm({ title: 'Savatchani tozalash', message: "Savatchadagi barcha mahsulotlar olib tashlanadi.", confirmText: 'Tozalash', danger: true });
+    if (ok) { setCart([]); setDiscount(''); }
   }
 
   const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-  const discountAmount = discountType === 'percent' ? subtotal * (discount / 100) : discount;
-  const finalTotal = Math.max(0, subtotal - discountAmount);
+  const discountValue = Number(discount) || 0;
+  const discountAmount = discountType === 'percent'
+    ? Math.round((subtotal * Math.min(discountValue, 100)) / 100)
+    : Math.min(discountValue, subtotal);
+  const total = subtotal - discountAmount;
+  const itemsCount = cart.reduce((s, i) => s + i.quantity, 0);
 
-  // Loyalty points
-  const settings = { loyaltyPointsPerUnit: 1000 };
-  const pointsEarned = Math.floor(finalTotal / settings.loyaltyPointsPerUnit);
-
-  async function completeSale() {
-    if (cart.length === 0) return toast.error('Savatcha bo\'sh!');
-    if (!window.api) return toast.error('API ulanmagan');
-
-    try {
-      const result = await window.api.sales.create({
-        items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, price: i.price })),
-        total: subtotal,
-        discount: discount,
-        discount_type: discountType,
-        final_total: finalTotal,
-        payment_method: paymentMethod,
-        customer_id: customer?.id || null,
-        loyalty_points_earned: pointsEarned,
-        loyalty_points_used: 0,
-      });
-
-      if (result.success) {
-        toast.success(`✅ Sotuv #${result.sale_number} muvaffaqiyatli!`);
-        setCart([]);
-        setDiscount(0);
-        setCustomer(null);
-        setShowPayment(false);
-        loadProducts();
-        if (onDataChange) onDataChange();
-      }
-    } catch (err) {
-      toast.error('Xatolik: ' + err.message);
-    }
+  function onSearchKey(e) {
+    if (e.key !== 'Enter') return;
+    const q = query.trim().toLowerCase();
+    const exact = products.find((p) => p.code && p.code.toLowerCase() === q);
+    const target = exact || (visible.length === 1 ? visible[0] : null);
+    if (target) { add(target); setQuery(''); }
   }
 
-  async function searchCustomers(q) {
-    if (!window.api || q.length < 1) return;
-    const results = await window.api.customers.search(q);
-    setCustomers(results || []);
+  function finish(result) {
+    setPaying(false);
+    setCart([]);
+    setDiscount('');
+    setCustomer(null);
+    toast.success(`Sotuv ${result.sale_number} yakunlandi · ${som(result.final_total)}`);
+    if (result.change > 0) toast(`Qaytim: ${som(result.change)}`, { duration: 10000, icon: '↩' });
+    if (result.debt > 0) toast(`Qarzga yozildi: ${som(result.debt)}`, { duration: 8000, icon: '!' });
+    load();
+    refreshAlerts();
+    if (searchRef.current) searchRef.current.focus();
   }
 
-  const filtered = search
-    ? products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode && p.barcode.includes(search)))
-    : products;
+  const cb = customer ? balanceState(customer.balance) : null;
 
   return (
-    <div className="pos-layout">
-      {/* Left: Products */}
-      <div className="pos-products">
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <div className="search-bar" style={{ flex: 1 }}>
-            <span className="search-icon">🔍</span>
-            <input
-              ref={searchRef}
-              placeholder="Mahsulot qidirish yoki barcode..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && search) {
-                  const found = products.find(p => p.barcode === search);
-                  if (found) { addToCart(found); setSearch(''); toast.success(`✅ ${found.name}`); }
-                }
-              }}
-              autoFocus
-            />
-          </div>
-          <button className="btn btn-primary" onClick={() => setShowScanner(true)}>
-            📷 Kamera
-          </button>
-        </div>
-
-        <div className="product-grid">
-          {filtered.map(p => (
-            <div key={p.id} className="product-card" onClick={() => { addToCart(p); }}>
-              <div className="emoji">
-                {p.stock <= 0 ? '❌' : p.stock <= (p.min_stock || 3) ? '⚠️' : '📦'}
-              </div>
-              <div className="name" title={p.name}>{p.name}</div>
-              <div className="price">{formatMoney(p.sell_price)}</div>
-              <div className="stock" style={{ color: p.stock <= 0 ? 'var(--danger)' : p.stock <= (p.min_stock || 3) ? 'var(--warning)' : 'var(--text-muted)' }}>
-                {p.stock} dona
-              </div>
+    <div className="content flush">
+      <div className="pos">
+        <section className="pos-catalog">
+          <div className="pos-catalog-head">
+            <div className="row-between">
+              <SearchInput
+                size="lg"
+                inputRef={searchRef}
+                value={query}
+                onChange={setQuery}
+                onKeyDown={onSearchKey}
+                placeholder="Mahsulot nomi, brend yoki kod — Enter qo'shadi"
+                autoFocus
+              />
+              <span className="secondary nowrap" style={{ fontSize: 13 }}>{visible.length} ta mahsulot</span>
             </div>
-          ))}
-          {filtered.length === 0 && (
-            <div className="empty-state" style={{ gridColumn: '1/-1' }}>
-              <span className="icon">📦</span>
-              <p>Mahsulot topilmadi</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Right: Cart */}
-      <div className="pos-cart">
-        <div className="pos-cart-header">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>🛒 Savatcha ({cart.length})</span>
-            {cart.length > 0 && (
-              <button className="btn btn-outline btn-sm" onClick={() => setCart([])}>🗑️ Tozalash</button>
-            )}
-          </div>
-          {/* Customer */}
-          <div style={{ marginTop: 8, fontSize: 13 }}>
-            {customer ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--accent-light)', padding: '6px 10px', borderRadius: 8 }}>
-                <span>👤 {customer.name} ({customer.loyalty_tier} — {customer.loyalty_points} ball)</span>
-                <button style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer' }} onClick={() => setCustomer(null)}>✕</button>
-              </div>
-            ) : (
-              <button className="btn btn-outline btn-sm" style={{ width: '100%' }} onClick={() => setShowCustomerSearch(true)}>
-                👤 Mijoz tanlash
+            <div className="chips">
+              <button type="button" className={`chip${category === 'all' ? ' active' : ''}`} onClick={() => setCategory('all')}>
+                Barchasi <span className="count">{products.length}</span>
               </button>
-            )}
-          </div>
-        </div>
-
-        <div className="pos-cart-items">
-          {cart.length === 0 ? (
-            <div className="empty-state" style={{ padding: 30 }}>
-              <span className="icon">🛒</span>
-              <p>Savatcha bo'sh</p>
-              <p style={{ fontSize: 12, marginTop: 4 }}>Mahsulotni bosing yoki skanerlang</p>
-            </div>
-          ) : (
-            cart.map(item => (
-              <div key={item.product_id} className="cart-item">
-                <div className="cart-item-info">
-                  <div className="cart-item-name">{item.name}</div>
-                  <div className="cart-item-price">{formatMoney(item.price)} × {item.quantity} = {formatMoney(item.price * item.quantity)}</div>
-                </div>
-                <div className="cart-item-qty">
-                  <button onClick={() => updateQty(item.product_id, -1)}>−</button>
-                  <span>{item.quantity}</span>
-                  <button onClick={() => updateQty(item.product_id, 1)}>+</button>
-                </div>
-                <button style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 18 }} onClick={() => removeFromCart(item.product_id)}>🗑️</button>
-              </div>
-            ))
-          )}
-        </div>
-
-        <div className="pos-cart-total">
-          <div className="total-row">
-            <span>Jami:</span>
-            <span>{formatMoney(subtotal)} so'm</span>
-          </div>
-          {discount > 0 && (
-            <div className="total-row" style={{ color: 'var(--danger)' }}>
-              <span>Chegirma:</span>
-              <span>−{formatMoney(discountAmount)} so'm</span>
-            </div>
-          )}
-          <div className="total-row final">
-            <span>YAKUNIY:</span>
-            <span>{formatMoney(finalTotal)} so'm</span>
-          </div>
-          {pointsEarned > 0 && customer && (
-            <div style={{ fontSize: 12, color: 'var(--accent)', textAlign: 'right', marginTop: 4 }}>
-              +{pointsEarned} loyalty ball
-            </div>
-          )}
-          <button
-            className="btn btn-success btn-lg"
-            style={{ width: '100%', marginTop: 12, fontSize: 18, padding: '14px' }}
-            onClick={() => cart.length > 0 && setShowPayment(true)}
-            disabled={cart.length === 0}
-          >
-            💳 To'lash ({formatMoney(finalTotal)} so'm)
-          </button>
-        </div>
-      </div>
-
-      {/* Payment Modal */}
-      {showPayment && (
-        <Modal title="💳 To'lov" onClose={() => setShowPayment(false)}>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8, display: 'block' }}>To'lov usuli:</label>
-            <div className="payment-buttons">
-              {[
-                { id: 'cash', label: '💵 Naqd' },
-                { id: 'card', label: '💳 Karta' },
-                { id: 'click', label: '📱 Click' },
-                { id: 'payme', label: '📱 Payme' },
-                { id: 'mixed', label: '🔄 Aralash' },
-              ].map(m => (
-                <div key={m.id} className={`payment-btn ${paymentMethod === m.id ? 'active' : ''}`} onClick={() => setPaymentMethod(m.id)}>
-                  {m.label}
-                </div>
+              {chips.map((c) => (
+                <button key={c.id} type="button" className={`chip${category === c.id ? ' active' : ''}`} onClick={() => setCategory(c.id)}>
+                  {c.name} <span className="count">{c.product_count}</span>
+                </button>
               ))}
             </div>
           </div>
 
-          <div className="grid-2">
-            <div className="form-group">
-              <label>Chegirma miqdori:</label>
-              <input className="form-input" type="number" value={discount} onChange={(e) => setDiscount(Math.max(0, Number(e.target.value)))} />
+          <div className="pos-grid-wrap">
+            {visible.length === 0 ? (
+              <EmptyState
+                icon={PackageSearch}
+                title={products.length ? 'Mahsulot topilmadi' : "Hali mahsulot qo'shilmagan"}
+                text={products.length ? "Qidiruv so'zini yoki kategoriyani o'zgartiring" : '"Mahsulotlar" bo\'limida mahsulot yarating'}
+              />
+            ) : (
+              <div className="product-grid">
+                {visible.map((p) => (
+                  <button key={p.id} type="button" className="tile" onClick={() => add(p)} disabled={p.stock <= 0}>
+                    {inCart[p.id] > 0 && <span className="tile-qty">{inCart[p.id]}</span>}
+                    <span className="tile-cat">{categoryLabel(p)}</span>
+                    <span className="tile-name">{p.name}</span>
+                    <span className="tile-meta">{productMeta(p) || `Kod ${p.code}`}</span>
+                    <span className="tile-foot">
+                      <span className="tile-price">{money(p.sell_price)}</span>
+                      <Pill tone={stockTone(p)}>{p.stock <= 0 ? 'Tugagan' : `${p.stock} ${p.unit || 'dona'}`}</Pill>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <aside className="pos-cart">
+          <div className="cart-head">
+            <div className="row-between">
+              <div className="row"><ShoppingCart size={18} /><span className="strong">Savatcha</span>{itemsCount > 0 && <Pill tone="primary" dot={false}>{itemsCount}</Pill>}</div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={clearCart} disabled={!cart.length}>Tozalash</button>
             </div>
-            <div className="form-group">
-              <label>Turi:</label>
-              <select className="form-input" value={discountType} onChange={(e) => setDiscountType(e.target.value)}>
-                <option value="percent">Foiz (%)</option>
-                <option value="amount">Summa (so'm)</option>
-              </select>
-            </div>
+
+            {customer ? (
+              <div className="cart-customer">
+                <div className="avatar">{initials(customer.name)}</div>
+                <div className="info">
+                  <div className="name">{customer.name}</div>
+                  <div className="meta">
+                    {cb.amount ? <span className={cb.cls}>{cb.label}: {som(cb.amount)}</span> : 'Hisob nol'}
+                  </div>
+                </div>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPicking(true)}>O'zgartirish</button>
+                <button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={() => setCustomer(null)} aria-label="Mijozni olib tashlash"><X size={16} /></button>
+              </div>
+            ) : (
+              <div className="cart-customer empty-state">
+                <div className="avatar neutral"><UserRound size={16} /></div>
+                <div className="info">
+                  <div className="name">Mijozsiz sotuv</div>
+                  <div className="meta">Avans yoki qarz uchun mijoz tanlang</div>
+                </div>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPicking(true)}>Tanlash</button>
+              </div>
+            )}
           </div>
 
-          <div style={{ background: 'var(--bg-primary)', padding: 16, borderRadius: 'var(--radius-sm)', marginTop: 12 }}>
-            <div className="total-row"><span>Jami:</span><span>{formatMoney(subtotal)} so'm</span></div>
-            {discount > 0 && <div className="total-row" style={{ color: 'var(--danger)' }}><span>Chegirma:</span><span>−{formatMoney(discountAmount)} so'm</span></div>}
-            <div className="total-row final"><span>YAKUNIY:</span><span>{formatMoney(finalTotal)} so'm</span></div>
+          <div className="cart-lines">
+            {cart.length === 0 ? (
+              <EmptyState icon={ShoppingCart} title="Savatcha bo'sh" text="Mahsulot kartochkasini bosing yoki qidiruvda Enter bosing" />
+            ) : cart.map((i) => (
+              <div key={i.product_id} className="cart-line">
+                <div>
+                  <div className="name">{i.name}</div>
+                  {i.meta && <div className="meta">{i.meta}</div>}
+                </div>
+                <div className="line-total">{money(i.price * i.quantity)}</div>
+                <div className="controls">
+                  <div className="qty">
+                    <button type="button" onClick={() => (i.quantity > 1 ? setQty(i.product_id, i.quantity - 1) : remove(i.product_id))} aria-label="Kamaytirish"><Minus size={14} /></button>
+                    <input value={i.quantity} onChange={(e) => setQty(i.product_id, e.target.value)} inputMode="numeric" />
+                    <button type="button" onClick={() => setQty(i.product_id, i.quantity + 1)} aria-label="Ko'paytirish"><Plus size={14} /></button>
+                  </div>
+                  <span className="unit">{money(i.price)} × {i.quantity}</span>
+                  <button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={() => remove(i.product_id)} aria-label="O'chirish"><Trash2 size={15} /></button>
+                </div>
+              </div>
+            ))}
           </div>
 
-          <div className="modal-footer">
-            <button className="btn btn-outline" onClick={() => setShowPayment(false)}>Bekor</button>
-            <button className="btn btn-success btn-lg" onClick={completeSale}>
-              ✅ Sotishni tasdiqlash
+          <div className="cart-foot">
+            <div className="discount-row">
+              <span className="secondary" style={{ fontSize: 13, width: 70 }}>Chegirma</span>
+              <div className="input-wrap">
+                {discountType === 'percent' ? (
+                  <div className="input-group">
+                    <input className="input tnum" type="number" min="0" max="100" value={discount} onChange={(e) => setDiscount(e.target.value === '' ? '' : Math.min(100, Math.max(0, Number(e.target.value))))} placeholder="0" />
+                    <span className="input-addon">%</span>
+                  </div>
+                ) : (
+                  <MoneyInput value={discount} onChange={setDiscount} />
+                )}
+              </div>
+              <Segmented size="sm" options={[{ id: 'percent', label: '%' }, { id: 'amount', label: "so'm" }]} value={discountType} onChange={(v) => { setDiscountType(v); setDiscount(''); }} />
+            </div>
+            <div className="summary">
+              <div className="summary-row"><span>Jami ({itemsCount} dona)</span><strong>{som(subtotal)}</strong></div>
+              {discountAmount > 0 && <div className="summary-row"><span>Chegirma</span><strong className="text-danger">−{som(discountAmount)}</strong></div>}
+              <div className="summary-row total"><span>To'lov</span><strong>{som(total)}</strong></div>
+            </div>
+            <button type="button" className="btn btn-primary btn-lg btn-block" disabled={!cart.length} onClick={() => setPaying(true)}>
+              To'lovga o'tish
             </button>
           </div>
-        </Modal>
-      )}
+        </aside>
+      </div>
 
-      {/* Camera Scanner Modal */}
-      {showScanner && (
-        <Modal title="📷 Barcode skanerlash" onClose={() => setShowScanner(false)}>
-          <BarcodeScanner onScan={handleBarcodeScan} onClose={() => setShowScanner(false)} />
-        </Modal>
+      {picking && (
+        <CustomerPicker onClose={() => setPicking(false)} onSelect={(c) => { setCustomer(c); setPicking(false); }} />
       )}
-
-      {/* Customer Search Modal */}
-      {showCustomerSearch && (
-        <Modal title="👤 Mijoz tanlash" onClose={() => setShowCustomerSearch(false)}>
-          <div className="search-bar" style={{ marginBottom: 12 }}>
-            <span className="search-icon">🔍</span>
-            <input
-              placeholder="Ism yoki telefon..."
-              value={customerSearch}
-              onChange={(e) => { setCustomerSearch(e.target.value); searchCustomers(e.target.value); }}
-              autoFocus
-            />
-          </div>
-          {customers.map(c => (
-            <div key={c.id}
-              style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', border: '1px solid var(--border)', marginBottom: 6, background: 'var(--bg-primary)' }}
-              onClick={() => { setCustomer(c); setShowCustomerSearch(false); setCustomerSearch(''); }}
-            >
-              <div style={{ fontWeight: 600 }}>{c.name}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                📞 {c.phone || '—'} | {c.loyalty_tier} | {c.loyalty_points} ball
-              </div>
-            </div>
-          ))}
-          {customers.length === 0 && customerSearch && (
-            <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>Topilmadi</p>
-          )}
-        </Modal>
+      {paying && (
+        <PaymentModal
+          total={total}
+          subtotal={subtotal}
+          customer={customer}
+          items={cart}
+          discount={discountType === 'percent' ? Math.min(discountValue, 100) : discountAmount}
+          discountType={discountType}
+          allowDebt={settings.allowDebt !== 'false'}
+          onClose={() => setPaying(false)}
+          onDone={finish}
+        />
       )}
     </div>
   );
