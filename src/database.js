@@ -358,6 +358,7 @@ class DB {
       sell_price: sell,
       min_stock: Math.max(0, toInt(input.min_stock)),
       unit: opt(input.unit) || 'dona',
+      image: opt(input.image),
     };
   }
 
@@ -373,10 +374,10 @@ class DB {
       this.ensureCodeFree(code);
       const ts = now();
       const id = Number(this.db.prepare(`
-        INSERT INTO products (code, name, category_id, brand, flavor, weight, description, cost_price, sell_price,
+        INSERT INTO products (code, name, category_id, brand, flavor, weight, description, image, cost_price, sell_price,
           stock, min_stock, unit, is_active, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1, ?, ?)
-      `).run(code, p.name, p.category_id, p.brand, p.flavor, p.weight, p.description, p.cost_price, p.sell_price,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1, ?, ?)
+      `).run(code, p.name, p.category_id, p.brand, p.flavor, p.weight, p.description, p.image, p.cost_price, p.sell_price,
         p.min_stock, p.unit, ts, ts).lastInsertRowid);
       this.log('CREATE', 'product', id, `Yangi mahsulot: ${p.name} (kod ${code})`);
 
@@ -399,9 +400,9 @@ class DB {
       const code = p.code || existing.code || this.nextProductCode();
       this.ensureCodeFree(code, id);
       this.db.prepare(`
-        UPDATE products SET code = ?, name = ?, category_id = ?, brand = ?, flavor = ?, weight = ?, description = ?,
+        UPDATE products SET code = ?, name = ?, category_id = ?, brand = ?, flavor = ?, weight = ?, description = ?, image = ?,
           cost_price = ?, sell_price = ?, min_stock = ?, unit = ?, updated_at = ? WHERE id = ?
-      `).run(code, p.name, p.category_id, p.brand, p.flavor, p.weight, p.description, p.cost_price, p.sell_price,
+      `).run(code, p.name, p.category_id, p.brand, p.flavor, p.weight, p.description, p.image, p.cost_price, p.sell_price,
         p.min_stock, p.unit, now(), id);
       let details = `Mahsulot tahrirlandi: ${p.name}`;
       if (toInt(existing.sell_price) !== p.sell_price) details += `; sotuv narxi ${fmt(existing.sell_price)} → ${fmt(p.sell_price)}`;

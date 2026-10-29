@@ -77,6 +77,9 @@ export default function App() {
     reloadSettings();
     window.api.app.info().then(setInfo).catch(() => {});
     const timer = setInterval(refreshAlerts, 60000);
+    // Saqlangan temani yuklash
+    const savedTheme = localStorage.getItem('oxygengym-theme');
+    if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
     return () => clearInterval(timer);
   }, [refreshAlerts, reloadSettings]);
 

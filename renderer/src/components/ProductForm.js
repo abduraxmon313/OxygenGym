@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
+import { ImagePlus, X } from 'lucide-react';
 import Modal from './Modal';
 import MoneyInput from './MoneyInput';
 import { CategorySelect, Field } from './ui';
@@ -11,6 +12,7 @@ function emptyForm(defaults = {}) {
   return {
     name: '', code: '', category_id: '', brand: '', weight: '', flavor: '', unit: 'dona',
     cost_price: '', sell_price: '', min_stock: 3, description: '', initial_stock: '', initial_expiry: '',
+    image: '',
     ...defaults,
   };
 }
@@ -20,6 +22,7 @@ function fromProduct(p) {
     name: p.name || '', code: p.code || '', category_id: p.category_id || '', brand: p.brand || '',
     weight: p.weight || '', flavor: p.flavor || '', unit: p.unit || 'dona', cost_price: p.cost_price ?? '',
     sell_price: p.sell_price ?? '', min_stock: p.min_stock ?? 3, description: p.description || '',
+    image: p.image || '',
   });
 }
 
@@ -36,6 +39,7 @@ export default function ProductForm({ mode = 'create', source, categories, brand
   const [nextCode, setNextCode] = useState('');
   const [batches, setBatches] = useState([]);
   const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
 
   useEffect(() => {
     if (mode !== 'edit') window.api.products.nextCode().then(setNextCode).catch(() => {});
@@ -106,22 +110,59 @@ export default function ProductForm({ mode = 'create', source, categories, brand
 
         <div className="form-section">
           <div className="form-section-title">Asosiy ma'lumotlar</div>
+          <div style={{ display: 'flex', gap: 20, marginBottom: 16 }}>
+            <div style={{ flexShrink: 0 }}>
+              <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Rasm</label>
+              <div style={{ width: 110, height: 110, borderRadius: 10, border: '2px dashed var(--border-strong)', background: 'var(--surface-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative', cursor: 'pointer' }}
+                onClick={() => fileRef.current && fileRef.current.click()}>
+                {form.image ? (
+                  <>
+                    <img src={form.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <button type="button" onClick={(e) => { e.stopPropagation(); set('image')(''); }}
+                      style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', border: 0, display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                      <X size={12} />
+                    </button>
+                  </>
+                ) : (
+                  <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <ImagePlus size={24} style={{ opacity: 0.5 }} />
+                    <div style={{ fontSize: 11, marginTop: 4 }}>Tanlash</div>
+                  </div>
+                )}
+                <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
+                  const file = e.target.files && e.target.files[0];
+                  if (!file) return;
+                  if (file.size > 5 * 1024 * 1024) { toast.error("Rasm 5 MB dan katta bo'lmasligi kerak"); return; }
+                  const reader = new FileReader();
+                  reader.onload = () => set('image')(reader.result);
+                  reader.readAsDataURL(file);
+                  e.target.value = '';
+                }} />
+              </div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div className="grid-2" style={{ marginBottom: 16 }}>
+                <Field label="Mahsulot nomi" required>
+                  <input className="input" value={form.name} onChange={setFromEvent('name')} placeholder="Masalan: Gold Standard 100% Whey" autoFocus />
+                </Field>
+                <Field label="Mahsulot kodi" hint="Bo'sh qolsa avtomatik beriladi">
+                  <input className="input mono" value={form.code} onChange={setFromEvent('code')} placeholder={nextCode || 'Avtomatik'} />
+                </Field>
+              </div>
+              <div className="grid-3">
+                <Field label="Kategoriya">
+                  <CategorySelect categories={categories} value={form.category_id} onChange={set('category_id')} />
+                </Field>
+                <Field label="Ishlab chiqaruvchi (brend)">
+                  <input className="input" list="brand-list" value={form.brand} onChange={setFromEvent('brand')} placeholder="Optimum Nutrition" />
+                </Field>
+                <Field label="Hajmi / qadoq">
+                  <input className="input" value={form.weight} onChange={setFromEvent('weight')} placeholder="2,27 kg · 120 kapsula · 500 ml" />
+                </Field>
+              </div>
+            </div>
+          </div>
           <div className="grid-3">
-            <Field label="Mahsulot nomi" required className="span-2">
-              <input className="input" value={form.name} onChange={setFromEvent('name')} placeholder="Masalan: Gold Standard 100% Whey" autoFocus />
-            </Field>
-            <Field label="Mahsulot kodi" hint="Bo'sh qolsa avtomatik beriladi">
-              <input className="input mono" value={form.code} onChange={setFromEvent('code')} placeholder={nextCode || 'Avtomatik'} />
-            </Field>
-            <Field label="Kategoriya">
-              <CategorySelect categories={categories} value={form.category_id} onChange={set('category_id')} />
-            </Field>
-            <Field label="Ishlab chiqaruvchi (brend)">
-              <input className="input" list="brand-list" value={form.brand} onChange={setFromEvent('brand')} placeholder="Optimum Nutrition" />
-            </Field>
-            <Field label="Hajmi / qadoq">
-              <input className="input" value={form.weight} onChange={setFromEvent('weight')} placeholder="2,27 kg · 120 kapsula · 500 ml" />
-            </Field>
             <Field label="Ta'mi / varianti">
               <input className="input" value={form.flavor} onChange={setFromEvent('flavor')} placeholder="Shokolad, vanil, ta'msiz" />
             </Field>

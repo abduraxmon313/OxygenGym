@@ -43,7 +43,7 @@ export default function Sidebar({ page, onNavigate, alertCount, shopName, versio
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <div className="brand-mark">O₂</div>
+        <div className="brand-mark"><img src="./logo.png" alt="OxygenGym" /></div>
         <div>
           <div className="brand-name">OxygenGym</div>
           <div className="brand-sub">Savdo va ombor tizimi</div>

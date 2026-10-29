@@ -1,9 +1,37 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { toast } from 'react-hot-toast';
-import { Download, FolderOpen, RefreshCw, Upload } from 'lucide-react';
+import { Download, FolderOpen, Moon, RefreshCw, Sun, Upload } from 'lucide-react';
 import { Field, PageHeader } from '../components/ui';
 import { useConfirm } from '../components/ConfirmDialog';
 import { fileSize, fmtDateTime } from '../lib/format';
+
+function ThemeToggle() {
+  const [theme, setTheme] = useState(() => localStorage.getItem('oxygengym-theme') || 'light');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('oxygengym-theme', theme);
+  }, [theme]);
+
+  return (
+    <div className="row" style={{ gap: 12 }}>
+      <button
+        type="button"
+        className={`btn ${theme === 'light' ? 'btn-primary' : 'btn-secondary'}`}
+        onClick={() => setTheme('light')}
+      >
+        <Sun size={16} />Kunduzgi rejim
+      </button>
+      <button
+        type="button"
+        className={`btn ${theme === 'dark' ? 'btn-primary' : 'btn-secondary'}`}
+        onClick={() => setTheme('dark')}
+      >
+        <Moon size={16} />Tungi rejim
+      </button>
+    </div>
+  );
+}
 
 export default function Settings({ settings, reloadSettings, appInfo }) {
   const [form, setForm] = useState(settings);
@@ -156,6 +184,13 @@ export default function Settings({ settings, reloadSettings, appInfo }) {
                   </button>
                 </div>
                 {appInfo.dataDir && <span className="field-hint mono">Ma'lumotlar: {appInfo.dataDir}</span>}
+              </div>
+            </div>
+
+            <div className="settings-grid">
+              <div><h3>Ko'rinish</h3><p>Kunduzgi va tungi rejim. Tungi rejimda ko'zlar kamroq charchaydi.</p></div>
+              <div className="stack-sm">
+                <ThemeToggle />
               </div>
             </div>
           </div>
