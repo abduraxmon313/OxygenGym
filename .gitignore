@@ -1,0 +1,9 @@
+node_modules/
+dist/
+renderer/node_modules/
+renderer/build/
+*.db
+*.db-journal
+.env
+.DS_Store
+Thumbs.db

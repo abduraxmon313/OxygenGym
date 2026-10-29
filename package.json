@@ -1,0 +1,78 @@
+{
+  "name": "oxygengym",
+  "version": "1.0.0",
+  "description": "OxygenGym — Zal uchun mukammal sotuv dasturi",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "cross-env NODE_ENV=development electron .",
+    "build": "npm run build:react && electron-builder --win",
+    "build:react": "cd renderer && npm run build",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "author": "OxygenGym Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/abduraxmon313/OxygenGym.git"
+  },
+  "build": {
+    "appId": "com.oxygengym.pos",
+    "productName": "OxygenGym",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "renderer/build/**/*",
+      "assets/**/*",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "assets",
+        "to": "assets"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "OxygenGym"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "abduraxmon313",
+        "repo": "OxygenGym"
+      }
+    ]
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.6.0",
+    "electron-updater": "^6.3.9",
+    "electron-log": "^5.2.4",
+    "date-fns": "^4.1.0"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "cross-env": "^7.0.3"
+  }
+}
