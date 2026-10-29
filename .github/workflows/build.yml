@@ -37,9 +37,10 @@ jobs:
           cd ..
 
       - name: Build Electron app (.EXE)
-        run: npx electron-builder --win --publish never
+        run: npx electron-builder --win nsis --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: true
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
