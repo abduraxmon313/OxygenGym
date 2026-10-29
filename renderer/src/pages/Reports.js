@@ -1,127 +1,172 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { toast } from 'react-hot-toast';
+import { BarChart3, Banknote, HandCoins, TrendingUp, Wallet } from 'lucide-react';
+import { DateRange, EmptyState, PageHeader, StatCard, Tabs } from '../components/ui';
+import { fmtDate, monthRange, money, productMeta, som } from '../lib/format';
 
-function formatMoney(n) { return Number(n || 0).toLocaleString('uz-UZ'); }
+const pct = (profit, revenue) => (revenue > 0 ? `${((profit / revenue) * 100).toFixed(1)}%` : '—');
+const sum = (rows, key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
 
 export default function Reports() {
   const [tab, setTab] = useState('sales');
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date(); d.setDate(1);
-    return d.toISOString().split('T')[0];
-  });
-  const [dateTo, setDateTo] = useState(() => new Date().toISOString().split('T')[0]);
-  const [data, setData] = useState([]);
+  const [range, setRange] = useState(() => monthRange(0));
+  const [rows, setRows] = useState([]);
+  const [cash, setCash] = useState(null);
+  const [from, to] = range;
 
-  useEffect(() => { loadReport(); }, [tab]);
+  const load = useCallback(async () => {
+    const filters = { dateFrom: from, dateTo: to };
+    try {
+      if (tab === 'cash') {
+        setCash(await window.api.reports.cashflow(filters));
+      } else {
+        const fn = { sales: window.api.reports.sales, products: window.api.reports.products, categories: window.api.reports.categories }[tab];
+        setRows(await fn(filters));
+      }
+    } catch (err) {
+      toast.error(err.message);
+    }
+  }, [tab, from, to]);
+  useEffect(() => { load(); }, [load]);
 
-  async function loadReport() {
-    if (!window.api) return;
-    const filters = { dateFrom, dateTo };
-    let result;
-    if (tab === 'sales') result = await window.api.reports.sales(filters);
-    else if (tab === 'products') result = await window.api.reports.products(filters);
-    else if (tab === 'profit') result = await window.api.reports.profit(filters);
-    setData(result || []);
-  }
+  const revenue = sum(rows, 'revenue');
+  const cost = sum(rows, 'cost');
+  const profit = revenue - cost;
 
-  const totalRevenue = data.reduce((s, d) => s + (d.revenue || 0), 0);
-  const totalProfit = data.reduce((s, d) => s + (d.profit || 0), 0);
+  const summaryCards = tab === 'cash' && cash ? (
+    <div className="stat-grid">
+      <StatCard label="Jami tushum" value={money(cash.totals.total)} unit="so'm" icon={Banknote} tone="primary" />
+      <StatCard label="Naqd" value={money(cash.totals.cash)} unit="so'm" icon={Wallet} />
+      <StatCard label="Karta / Click / Payme" value={money(cash.totals.card + cash.totals.click + cash.totals.payme)} unit="so'm" icon={Wallet} />
+      <StatCard label="Qarzga sotilgan" value={money(cash.totals.debt)} unit="so'm" hint="Kassaga tushmagan" icon={HandCoins} tone={cash.totals.debt ? 'danger' : 'neutral'} />
+    </div>
+  ) : tab !== 'cash' ? (
+    <div className="stat-grid cols-3">
+      <StatCard label="Savdo" value={money(revenue)} unit="so'm" hint="Chegirmalardan keyin" icon={TrendingUp} tone="primary" />
+      <StatCard label="Tannarx" value={money(cost)} unit="so'm" icon={Wallet} />
+      <StatCard label="Yalpi foyda" value={money(profit)} unit="so'm" hint={`Marja ${pct(profit, revenue)}`} icon={BarChart3} tone="success" />
+    </div>
+  ) : null;
+
+  const empty = <EmptyState icon={BarChart3} title="Bu davrda ma'lumot yo'q" text="Sana oralig'ini o'zgartiring" />;
 
   return (
     <>
-      <div className="page-header">
-        <h2>📈 Hisobotlar</h2>
-      </div>
-      <div className="page-body">
-        <div className="tabs">
-          <button className={`tab ${tab === 'sales' ? 'active' : ''}`} onClick={() => setTab('sales')}>📊 Kunlik sotuv</button>
-          <button className={`tab ${tab === 'products' ? 'active' : ''}`} onClick={() => setTab('products')}>📦 Mahsulot bo'yicha</button>
-          <button className={`tab ${tab === 'profit' ? 'active' : ''}`} onClick={() => setTab('profit')}>💰 Foyda-zarar</button>
+      <PageHeader title="Hisobotlar" subtitle="Savdo, foyda va kassa tahlili" />
+      <div className="content">
+        <Tabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { id: 'sales', label: 'Kunlik savdo' },
+            { id: 'products', label: 'Mahsulotlar' },
+            { id: 'categories', label: 'Kategoriyalar' },
+            { id: 'cash', label: 'Kassa' },
+          ]}
+        />
+        <div className="toolbar">
+          <DateRange from={from} to={to} onChange={(a, b) => setRange([a, b])} />
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'flex-end' }}>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Dan:</label>
-            <input className="form-input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Gacha:</label>
-            <input className="form-input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-          </div>
-          <button className="btn btn-primary" onClick={loadReport}>📊 Ko'rsatish</button>
+        {summaryCards}
+
+        <div className="table-wrap">
+          {tab === 'sales' && (rows.length === 0 ? empty : (
+            <table className="table">
+              <thead><tr><th>Sana</th><th className="num">Cheklar</th><th className="num">Chegirma</th><th className="num">Savdo</th><th className="num">Tannarx</th><th className="num">Foyda</th><th className="num">Marja</th><th className="num">Qarzga</th></tr></thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.date}>
+                    <td>{fmtDate(r.date)}</td>
+                    <td className="num">{r.sales_count}</td>
+                    <td className="num secondary">{r.discount ? money(r.discount) : '—'}</td>
+                    <td className="num strong">{money(r.revenue)}</td>
+                    <td className="num secondary">{money(r.cost)}</td>
+                    <td className={`num ${r.profit >= 0 ? 'amount-pos' : 'amount-neg'}`}>{money(r.profit)}</td>
+                    <td className="num secondary">{pct(r.profit, r.revenue)}</td>
+                    <td className={`num ${r.debt ? 'amount-neg' : 'muted'}`}>{r.debt ? money(r.debt) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td>Jami</td><td className="num">{sum(rows, 'sales_count')}</td><td className="num">{money(sum(rows, 'discount'))}</td>
+                  <td className="num">{money(revenue)}</td><td className="num">{money(cost)}</td><td className="num">{money(profit)}</td>
+                  <td className="num">{pct(profit, revenue)}</td><td className="num">{money(sum(rows, 'debt'))}</td>
+                </tr>
+              </tfoot>
+            </table>
+          ))}
+
+          {tab === 'products' && (rows.length === 0 ? empty : (
+            <table className="table">
+              <thead><tr><th>#</th><th>Mahsulot</th><th className="num">Sotildi</th><th className="num">Savdo</th><th className="num">Tannarx</th><th className="num">Foyda</th><th className="num">Marja</th><th className="num">Ulush</th></tr></thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.id}>
+                    <td className="secondary">{i + 1}</td>
+                    <td><div className="cell-title">{r.name}</div><div className="cell-sub">{[productMeta(r), `Kod ${r.code}`].filter(Boolean).join(' · ')}</div></td>
+                    <td className="num">{r.qty} {r.unit}</td>
+                    <td className="num strong">{money(r.revenue)}</td>
+                    <td className="num secondary">{money(r.cost)}</td>
+                    <td className={`num ${r.profit >= 0 ? 'amount-pos' : 'amount-neg'}`}>{money(r.profit)}</td>
+                    <td className="num secondary">{pct(r.profit, r.revenue)}</td>
+                    <td className="num secondary">{revenue ? `${((r.revenue / revenue) * 100).toFixed(1)}%` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot><tr><td colSpan={2}>Jami</td><td className="num">{sum(rows, 'qty')}</td><td className="num">{money(revenue)}</td><td className="num">{money(cost)}</td><td className="num">{money(profit)}</td><td className="num">{pct(profit, revenue)}</td><td className="num">100%</td></tr></tfoot>
+            </table>
+          ))}
+
+          {tab === 'categories' && (rows.length === 0 ? empty : (
+            <table className="table">
+              <thead><tr><th>Kategoriya</th><th className="num">Sotildi</th><th className="num">Savdo</th><th className="num">Foyda</th><th className="num">Marja</th><th className="num">Ulush</th></tr></thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.name}>
+                    <td className="cell-title">{r.name}</td>
+                    <td className="num">{r.qty}</td>
+                    <td className="num strong">{money(r.revenue)}</td>
+                    <td className={`num ${r.profit >= 0 ? 'amount-pos' : 'amount-neg'}`}>{money(r.profit)}</td>
+                    <td className="num secondary">{pct(r.profit, r.revenue)}</td>
+                    <td className="num secondary">{revenue ? `${((r.revenue / revenue) * 100).toFixed(1)}%` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot><tr><td>Jami</td><td className="num">{sum(rows, 'qty')}</td><td className="num">{money(revenue)}</td><td className="num">{money(profit)}</td><td className="num">{pct(profit, revenue)}</td><td className="num">100%</td></tr></tfoot>
+            </table>
+          ))}
+
+          {tab === 'cash' && cash && (cash.rows.length === 0 ? empty : (
+            <table className="table">
+              <thead><tr><th>Sana</th><th className="num">Naqd</th><th className="num">Karta</th><th className="num">Click</th><th className="num">Payme</th><th className="num">Jami tushum</th><th className="num">Qarzga sotildi</th></tr></thead>
+              <tbody>
+                {cash.rows.map((r) => (
+                  <tr key={r.date}>
+                    <td>{fmtDate(r.date)}</td>
+                    <td className="num">{money(r.cash)}</td>
+                    <td className="num">{money(r.card)}</td>
+                    <td className="num">{money(r.click)}</td>
+                    <td className="num">{money(r.payme)}</td>
+                    <td className="num strong">{money(r.total)}</td>
+                    <td className={`num ${r.debt ? 'amount-neg' : 'muted'}`}>{r.debt ? money(r.debt) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td>Jami</td><td className="num">{money(cash.totals.cash)}</td><td className="num">{money(cash.totals.card)}</td>
+                  <td className="num">{money(cash.totals.click)}</td><td className="num">{money(cash.totals.payme)}</td>
+                  <td className="num">{som(cash.totals.total)}</td><td className="num">{money(cash.totals.debt)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          ))}
         </div>
-
-        {/* Summary */}
-        <div className="stats-grid" style={{ marginBottom: 16 }}>
-          <div className="stat-card">
-            <div className="stat-icon blue">💰</div>
-            <div className="stat-info"><h3>{formatMoney(totalRevenue)} so'm</h3><p>Jami daromad</p></div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-icon green">📈</div>
-            <div className="stat-info"><h3>{formatMoney(totalProfit)} so'm</h3><p>Jami foyda</p></div>
-          </div>
-        </div>
-
-        {/* Sales report */}
-        {tab === 'sales' && (
-          <div className="table-container">
-            <table>
-              <thead><tr><th>Sana</th><th>Sotuvlar</th><th>Daromad</th><th>Foyda</th></tr></thead>
-              <tbody>
-                {data.map((d, i) => (
-                  <tr key={i}>
-                    <td>{d.date}</td>
-                    <td>{d.sales_count} ta</td>
-                    <td>{formatMoney(d.revenue)} so'm</td>
-                    <td style={{ color: 'var(--success)' }}>{formatMoney(d.profit)} so'm</td>
-                  </tr>
-                ))}
-                {data.length === 0 && <tr><td colSpan="4" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>Ma'lumot yo'q</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Products report */}
-        {tab === 'products' && (
-          <div className="table-container">
-            <table>
-              <thead><tr><th>#</th><th>Mahsulot</th><th>Barcode</th><th>Sotilgan</th><th>Daromad</th><th>Foyda</th></tr></thead>
-              <tbody>
-                {data.map((d, i) => (
-                  <tr key={i}>
-                    <td>{i + 1}</td>
-                    <td style={{ fontWeight: 600 }}>{d.name}</td>
-                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{d.barcode || '—'}</td>
-                    <td>{d.qty_sold} dona</td>
-                    <td>{formatMoney(d.revenue)} so'm</td>
-                    <td style={{ color: 'var(--success)' }}>{formatMoney(d.profit)} so'm</td>
-                  </tr>
-                ))}
-                {data.length === 0 && <tr><td colSpan="6" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>Ma'lumot yo'q</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Profit report */}
-        {tab === 'profit' && (
-          <div className="table-container">
-            <table>
-              <thead><tr><th>Sana</th><th>Daromad</th><th>Xarajat</th><th>Sof foyda</th><th>Margin</th></tr></thead>
-              <tbody>
-                {data.map((d, i) => (
-                  <tr key={i}>
-                    <td>{d.date}</td>
-                    <td>{formatMoney(d.revenue)} so'm</td>
-                    <td style={{ color: 'var(--danger)' }}>{formatMoney(d.cost)} so'm</td>
-                    <td style={{ fontWeight: 700, color: d.profit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatMoney(d.profit)} so'm</td>
-                    <td>{d.revenue > 0 ? ((d.profit / d.revenue) * 100).toFixed(1) + '%' : '—'}</td>
-                  </tr>
-                ))}
-                {data.length === 0 && <tr><td colSpan="5" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>Ma'lumot yo'q</td></tr>}
-              </tbody>
-            </table>
+        {tab === 'cash' && (
+          <div className="table-footer-note">
+            <span>Kassa = sotuvdan tushgan pul + mijozlar to'lovlari − qaytarilgan pul. Qarzga sotilgan summa kassaga kirmaydi.</span>
           </div>
         )}
       </div>

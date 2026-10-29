@@ -1,133 +1,163 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { toast } from 'react-hot-toast';
+import { Download, FolderOpen, RefreshCw, Upload } from 'lucide-react';
+import { Field, PageHeader } from '../components/ui';
+import { useConfirm } from '../components/ConfirmDialog';
+import { fileSize, fmtDateTime } from '../lib/format';
 
-export default function Settings() {
-  const [settings, setSettings] = useState({});
-  const [loaded, setLoaded] = useState(false);
+export default function Settings({ settings, reloadSettings, appInfo }) {
+  const [form, setForm] = useState(settings);
+  const [backups, setBackups] = useState({ dir: '', files: [] });
+  const [checking, setChecking] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const confirm = useConfirm();
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { setForm(settings); }, [settings]);
 
-  async function load() {
-    if (!window.api) return;
-    const data = await window.api.settings.get();
-    setSettings(data || {});
-    setLoaded(true);
-  }
+  const loadBackups = useCallback(async () => {
+    try { setBackups(await window.api.backup.info()); } catch (err) { toast.error(err.message); }
+  }, []);
+  useEffect(() => { loadBackups(); }, [loadBackups]);
 
-  function update(key, value) {
-    setSettings(prev => ({ ...prev, [key]: value }));
-  }
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.type === 'checkbox' ? String(e.target.checked) : e.target.value }));
+  const dirty = JSON.stringify(form) !== JSON.stringify(settings);
 
   async function save() {
+    setSaving(true);
     try {
-      await window.api.settings.update(settings);
-      toast.success('✅ Sozlamalar saqlandi!');
+      await window.api.settings.update(form);
+      await reloadSettings();
+      toast.success('Sozlamalar saqlandi');
     } catch (err) {
-      toast.error('Xatolik: ' + err.message);
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
     }
   }
 
-  async function createBackup() {
+  async function backup() {
     try {
-      const result = await window.api.backup.create();
-      if (result.success) toast.success(`✅ Zaxira nusxa saqlandi!\n${result.path}`);
-      else toast.error(result.message);
-    } catch (err) { toast.error(err.message); }
+      const res = await window.api.backup.create();
+      if (res) toast.success('Zaxira nusxa saqlandi');
+    } catch (err) {
+      toast.error(err.message);
+    }
   }
 
-  async function restoreBackup() {
+  async function restore() {
+    const ok = await confirm({
+      title: 'Zaxira nusxadan tiklash',
+      message: "Hozirgi barcha ma'lumotlar tanlangan nusxa bilan almashtiriladi.\nXavfsizlik uchun hozirgi holat avval avtomatik saqlab qo'yiladi.",
+      confirmText: 'Faylni tanlash',
+      danger: true,
+    });
+    if (!ok) return;
     try {
-      const result = await window.api.backup.restore();
-      if (result.success) {
-        toast.success('✅ Tiklandi! Ilova qayta yuklanadi...');
-        setTimeout(() => window.location.reload(), 1500);
-      } else {
-        toast.error(result.message);
+      const res = await window.api.backup.restore();
+      if (res) {
+        toast.success("Ma'lumotlar tiklandi. Dastur qayta yuklanmoqda…");
+        setTimeout(() => window.location.reload(), 1200);
       }
-    } catch (err) { toast.error(err.message); }
+    } catch (err) {
+      toast.error(err.message);
+    }
   }
 
-  if (!loaded) return null;
+  async function checkUpdates() {
+    setChecking(true);
+    try {
+      const res = await window.api.updates.check();
+      if (res.dev) toast('Ishlab chiqish rejimida yangilanish tekshirilmaydi');
+      else if (res.available) toast.success(`Yangi versiya topildi: ${res.latest}`);
+      else toast.success(`Siz eng so'nggi versiyadasiz (${res.current})`);
+    } catch (err) {
+      toast.error(`Tekshirib bo'lmadi: ${err.message}`);
+    } finally {
+      setChecking(false);
+    }
+  }
 
   return (
     <>
-      <div className="page-header">
-        <h2>⚙️ Sozlamalar</h2>
-        <button className="btn btn-primary" onClick={save}>💾 Saqlash</button>
-      </div>
-      <div className="page-body">
-        {/* Shop Info */}
-        <div className="card" style={{ marginBottom: 16 }}>
-          <h3 style={{ marginBottom: 16 }}>🏪 Do'kon ma'lumotlari</h3>
-          <div className="grid-3">
-            <div className="form-group"><label>Do'kon nomi</label><input className="form-input" value={settings.shopName || ''} onChange={(e) => update('shopName', e.target.value)} /></div>
-            <div className="form-group"><label>Telefon</label><input className="form-input" value={settings.shopPhone || ''} onChange={(e) => update('shopPhone', e.target.value)} /></div>
-            <div className="form-group"><label>Valyuta</label><input className="form-input" value={settings.currency || ''} onChange={(e) => update('currency', e.target.value)} /></div>
-          </div>
-          <div className="form-group"><label>Manzil</label><input className="form-input" value={settings.shopAddress || ''} onChange={(e) => update('shopAddress', e.target.value)} /></div>
-        </div>
+      <PageHeader
+        title="Sozlamalar"
+        subtitle="Do'kon ma'lumotlari, savdo qoidalari va ma'lumotlar xavfsizligi"
+        actions={<button type="button" className="btn btn-primary" onClick={save} disabled={!dirty || saving}>O'zgarishlarni saqlash</button>}
+      />
+      <div className="content">
+        <div className="card">
+          <div className="card-body">
+            <div className="settings-grid">
+              <div><h3>Do'kon</h3><p>Dastur sarlavhasida va hisobotlarda ko'rinadi.</p></div>
+              <div className="grid-2">
+                <Field label="Do'kon nomi"><input className="input" value={form.shopName || ''} onChange={set('shopName')} /></Field>
+                <Field label="Telefon"><input className="input" value={form.shopPhone || ''} onChange={set('shopPhone')} placeholder="+998 ..." /></Field>
+                <Field label="Manzil" className="span-2"><input className="input" value={form.shopAddress || ''} onChange={set('shopAddress')} /></Field>
+              </div>
+            </div>
 
-        {/* Loyalty */}
-        <div className="card" style={{ marginBottom: 16 }}>
-          <h3 style={{ marginBottom: 16 }}>🏆 Loyalty (Sodiqlik) sozlamalari</h3>
-          <div className="form-group">
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input type="checkbox" checked={settings.loyaltyEnabled === 'true'} onChange={(e) => update('loyaltyEnabled', e.target.checked ? 'true' : 'false')} />
-              Loyalty tizimini yoqish
-            </label>
-          </div>
-          <div className="form-group">
-            <label>Har necha so'mga 1 ball?</label>
-            <input className="form-input" type="number" value={settings.loyaltyPointsPerUnit || 1000} onChange={(e) => update('loyaltyPointsPerUnit', e.target.value)} />
-          </div>
-          <h4 style={{ marginBottom: 8, marginTop: 16 }}>Darajalar:</h4>
-          <div className="table-container">
-            <table>
-              <thead><tr><th>Daraja</th><th>Min. ball</th><th>Chegirma %</th></tr></thead>
-              <tbody>
-                <tr>
-                  <td>🥉 Bronze</td>
-                  <td><input className="form-input" type="number" value={settings.loyaltyBronzeMin || 0} onChange={(e) => update('loyaltyBronzeMin', e.target.value)} /></td>
-                  <td><input className="form-input" type="number" value={settings.loyaltyBronzeDiscount || 2} onChange={(e) => update('loyaltyBronzeDiscount', e.target.value)} /></td>
-                </tr>
-                <tr>
-                  <td>🥈 Silver</td>
-                  <td><input className="form-input" type="number" value={settings.loyaltySilverMin || 1000} onChange={(e) => update('loyaltySilverMin', e.target.value)} /></td>
-                  <td><input className="form-input" type="number" value={settings.loyaltySilverDiscount || 5} onChange={(e) => update('loyaltySilverDiscount', e.target.value)} /></td>
-                </tr>
-                <tr>
-                  <td>🥇 Gold</td>
-                  <td><input className="form-input" type="number" value={settings.loyaltyGoldMin || 5000} onChange={(e) => update('loyaltyGoldMin', e.target.value)} /></td>
-                  <td><input className="form-input" type="number" value={settings.loyaltyGoldDiscount || 8} onChange={(e) => update('loyaltyGoldDiscount', e.target.value)} /></td>
-                </tr>
-                <tr>
-                  <td>💎 Diamond</td>
-                  <td><input className="form-input" type="number" value={settings.loyaltyDiamondMin || 15000} onChange={(e) => update('loyaltyDiamondMin', e.target.value)} /></td>
-                  <td><input className="form-input" type="number" value={settings.loyaltyDiamondDiscount || 12} onChange={(e) => update('loyaltyDiamondDiscount', e.target.value)} /></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+            <div className="settings-grid">
+              <div><h3>Savdo</h3><p>Qarzga sotish butunlay o'chirilsa, to'lov yetmasa sotuv yakunlanmaydi.</p></div>
+              <div className="stack-sm">
+                <label className="checkbox">
+                  <input type="checkbox" checked={form.allowDebt !== 'false'} onChange={set('allowDebt')} />
+                  Mijozlarga qarzga sotishga ruxsat berish
+                </label>
+                <span className="field-hint">Har bir mijoz uchun alohida qarz limitini mijoz kartasida belgilash mumkin.</span>
+              </div>
+            </div>
 
-        {/* Alerts */}
-        <div className="card" style={{ marginBottom: 16 }}>
-          <h3 style={{ marginBottom: 16 }}>🔔 Ogohlantirish sozlamalari</h3>
-          <div className="grid-2">
-            <div className="form-group"><label>Minimum qoldiq ogohlantirishi (dona)</label><input className="form-input" type="number" value={settings.lowStockAlert || 3} onChange={(e) => update('lowStockAlert', e.target.value)} /></div>
-            <div className="form-group"><label>Yaroqlik muddati ogohlantirishi (kun)</label><input className="form-input" type="number" value={settings.expiryAlertDays || 30} onChange={(e) => update('expiryAlertDays', e.target.value)} /></div>
-          </div>
-        </div>
+            <div className="settings-grid">
+              <div><h3>Ogohlantirishlar</h3><p>Ombor nazorati uchun chegaralar.</p></div>
+              <div className="grid-2">
+                <Field label="Yangi mahsulot uchun minimal qoldiq" hint="Mahsulot kartasida alohida o'zgartirish mumkin">
+                  <input className="input tnum" type="number" min="0" value={form.lowStockAlert || ''} onChange={set('lowStockAlert')} />
+                </Field>
+                <Field label="Yaroqlilik muddati ogohlantirishi (kun)" hint="Shuncha kun qolganda ogohlantiradi">
+                  <input className="input tnum" type="number" min="1" value={form.expiryAlertDays || ''} onChange={set('expiryAlertDays')} />
+                </Field>
+              </div>
+            </div>
 
-        {/* Backup */}
-        <div className="card" style={{ marginBottom: 16 }}>
-          <h3 style={{ marginBottom: 16 }}>💾 Zaxira nusxa (Backup)</h3>
-          <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 16 }}>
-            Ma'lumotlaringizni xavfsiz saqlash uchun muntazam zaxira nusxa oling. USB ga saqlashni tavsiya qilamiz.
-          </p>
-          <div style={{ display: 'flex', gap: 12 }}>
-            <button className="btn btn-primary" onClick={createBackup}>💾 Zaxira nusxa olish</button>
-            <button className="btn btn-outline" onClick={restoreBackup}>📂 Nusxadan tiklash</button>
+            <div className="settings-grid">
+              <div>
+                <h3>Zaxira nusxa</h3>
+                <p>Har kuni dastur ochilganda avtomatik nusxa olinadi va so'nggi 14 kunlik nusxa saqlanadi. Haftada bir marta USB'ga ham nusxa oling.</p>
+              </div>
+              <div className="stack">
+                <div className="row" style={{ flexWrap: 'wrap' }}>
+                  <button type="button" className="btn btn-primary" onClick={backup}><Download size={16} />Nusxani saqlash…</button>
+                  <button type="button" className="btn btn-secondary" onClick={restore}><Upload size={16} />Nusxadan tiklash…</button>
+                  <button type="button" className="btn btn-ghost" onClick={() => window.api.app.openBackupFolder().catch((err) => toast.error(err.message))}><FolderOpen size={16} />Avtomatik nusxalar papkasi</button>
+                </div>
+                <div className="table-wrap" style={{ maxHeight: 240 }}>
+                  <table className="table table-sm">
+                    <thead><tr><th>Fayl</th><th>Sana</th><th className="num">Hajmi</th></tr></thead>
+                    <tbody>
+                      {backups.files.length === 0 ? (
+                        <tr><td colSpan={3} className="muted">Hali avtomatik nusxa yo'q</td></tr>
+                      ) : backups.files.slice(0, 10).map((f) => (
+                        <tr key={f.name}><td className="mono">{f.name}</td><td>{fmtDateTime(f.modified)}</td><td className="num">{fileSize(f.size)}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <span className="field-hint mono">{backups.dir}</span>
+              </div>
+            </div>
+
+            <div className="settings-grid">
+              <div><h3>Dastur</h3><p>Yangilanishlar GitHub orqali avtomatik tekshiriladi. Yangilanganda ma'lumotlar saqlanib qoladi.</p></div>
+              <div className="stack-sm">
+                <div className="row"><span className="secondary">Joriy versiya:</span><strong>{appInfo.version || '—'}</strong></div>
+                <div>
+                  <button type="button" className="btn btn-secondary" onClick={checkUpdates} disabled={checking}>
+                    <RefreshCw size={16} />{checking ? 'Tekshirilmoqda…' : 'Yangilanishni tekshirish'}
+                  </button>
+                </div>
+                {appInfo.dataDir && <span className="field-hint mono">Ma'lumotlar: {appInfo.dataDir}</span>}
+              </div>
+            </div>
           </div>
         </div>
       </div>

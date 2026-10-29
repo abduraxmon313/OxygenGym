@@ -1,139 +1,144 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { toast } from 'react-hot-toast';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import {
+  AlertTriangle, Banknote, Boxes, CalendarClock, ChevronRight, HandCoins, Package, Receipt, ShoppingCart, TrendingUp, Wallet,
+} from 'lucide-react';
+import { EmptyState, PageHeader, StatCard } from '../components/ui';
+import SaleDetail from '../components/SaleDetail';
+import { compactMoney, fmtTime, longDate, money, productMeta, shortDay, som } from '../lib/format';
 
-function formatMoney(n) {
-  return Number(n || 0).toLocaleString('uz-UZ') + " so'm";
+function ChartTooltip({ active, payload }) {
+  if (!active || !payload || !payload.length) return null;
+  const p = payload[0].payload;
+  return (
+    <div className="chart-tooltip">
+      <div className="t">{shortDay(p.date)} · {p.count} ta chek</div>
+      <div className="v">{som(p.revenue)}</div>
+    </div>
+  );
 }
 
-export default function Dashboard({ setPage }) {
+export default function Dashboard({ navigate }) {
   const [stats, setStats] = useState(null);
+  const [saleId, setSaleId] = useState(null);
 
-  useEffect(() => {
-    loadStats();
-    const i = setInterval(loadStats, 30000);
-    return () => clearInterval(i);
+  const load = useCallback(async () => {
+    try { setStats(await window.api.dashboard.stats()); } catch (err) { toast.error(err.message); }
   }, []);
 
-  async function loadStats() {
-    if (!window.api) {
-      // Demo data for development
-      setStats({
-        today: { count: 0, revenue: 0, profit: 0 },
-        month: { count: 0, revenue: 0, profit: 0 },
-        lowStock: 0, expiring: 0, totalProducts: 0, totalCustomers: 0,
-        topProducts: [], recentSales: [], dailySales: [],
-      });
-      return;
-    }
-    try {
-      const data = await window.api.dashboard.getStats();
-      setStats(data);
-    } catch (e) { console.error(e); }
-  }
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 30000);
+    return () => clearInterval(timer);
+  }, [load]);
 
-  if (!stats) return <div className="page-body"><div className="empty-state"><span className="icon">⏳</span><p>Yuklanmoqda...</p></div></div>;
+  const header = (
+    <PageHeader
+      title="Bosh panel"
+      subtitle={longDate()}
+      actions={<button type="button" className="btn btn-primary" onClick={() => navigate('pos')}><ShoppingCart size={16} />Yangi sotuv</button>}
+    />
+  );
+
+  if (!stats) return <>{header}<div className="content"><div className="loading">Yuklanmoqda…</div></div></>;
+
+  const { today, month, inventory, customers } = stats;
+  const margin = today.revenue > 0 ? Math.round((today.profit / today.revenue) * 100) : 0;
+  const chartData = stats.daily.map((d) => ({ ...d, label: shortDay(d.date) }));
+  const alertsTotal = inventory.low_stock + inventory.expiring + inventory.expired;
 
   return (
     <>
-      <div className="page-header">
-        <h2>📊 Bosh panel</h2>
-        <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>
-          {new Date().toLocaleDateString('uz-UZ', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-        </span>
-      </div>
-      <div className="page-body">
-        {/* Stats Grid */}
-        <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-icon blue">💰</div>
-            <div className="stat-info">
-              <h3>{formatMoney(stats.today.revenue)}</h3>
-              <p>Bugungi sotuv</p>
-            </div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-icon green">📈</div>
-            <div className="stat-info">
-              <h3>{formatMoney(stats.today.profit)}</h3>
-              <p>Bugungi foyda</p>
-            </div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-icon purple">🧾</div>
-            <div className="stat-info">
-              <h3>{stats.today.count} ta</h3>
-              <p>Bugungi sotuvlar</p>
-            </div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-icon yellow">📦</div>
-            <div className="stat-info">
-              <h3>{stats.totalProducts} ta</h3>
-              <p>Jami mahsulotlar</p>
-            </div>
-          </div>
+      {header}
+      <div className="content">
+        <div className="stat-grid">
+          <StatCard label="Bugungi savdo" value={money(today.revenue)} unit="so'm" hint={`${today.count} ta chek`} icon={TrendingUp} tone="primary" />
+          <StatCard label="Bugungi foyda" value={money(today.profit)} unit="so'm" hint={today.revenue ? `Marja ${margin}%` : 'Sotuv hali yo\'q'} icon={Wallet} tone="success" />
+          <StatCard label="Bugungi kassa tushumi" value={money(stats.cashToday)} unit="so'm" hint="Naqd, karta, Click, Payme va mijoz to'lovlari" icon={Banknote} />
+          <StatCard
+            label="Mijozlar qarzi"
+            value={money(customers.total_debt)}
+            unit="so'm"
+            hint={customers.debtors ? `${customers.debtors} ta qarzdor mijoz` : "Qarzdor mijoz yo'q"}
+            icon={HandCoins}
+            tone={customers.total_debt > 0 ? 'danger' : 'neutral'}
+            onClick={() => navigate('customers')}
+          />
         </div>
 
-        {/* Monthly Stats */}
-        <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))' }}>
-          <div className="stat-card">
-            <div className="stat-icon blue">📅</div>
-            <div className="stat-info">
-              <h3>{formatMoney(stats.month.revenue)}</h3>
-              <p>Bu oylik sotuv ({stats.month.count} ta chek)</p>
-            </div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-icon green">💵</div>
-            <div className="stat-info">
-              <h3>{formatMoney(stats.month.profit)}</h3>
-              <p>Bu oylik sof foyda</p>
-            </div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-icon purple">👥</div>
-            <div className="stat-info">
-              <h3>{stats.totalCustomers} ta</h3>
-              <p>Jami mijozlar</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Alerts */}
-        {(stats.lowStock > 0 || stats.expiring > 0) && (
-          <div className="card" style={{ marginBottom: 24, borderColor: 'var(--warning)' }}>
-            <h3 style={{ marginBottom: 12 }}>⚠️ Ogohlantirishlar</h3>
-            <div style={{ display: 'flex', gap: 16 }}>
-              {stats.lowStock > 0 && (
-                <div className="badge-danger" style={{ cursor: 'pointer', padding: '8px 16px', fontSize: 14 }} onClick={() => setPage('alerts')}>
-                  📦 {stats.lowStock} ta mahsulot kam qoldi
-                </div>
-              )}
-              {stats.expiring > 0 && (
-                <div className="badge-warning" style={{ cursor: 'pointer', padding: '8px 16px', fontSize: 14 }} onClick={() => setPage('alerts')}>
-                  ⏰ {stats.expiring} ta partiya muddati yaqin
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div className="grid-2">
-          {/* Top Products */}
+        <div className="dash-grid">
           <div className="card">
-            <h3 style={{ marginBottom: 12 }}>🏆 Top mahsulotlar (bu oy)</h3>
+            <div className="card-header">
+              <div>
+                <div className="card-title">Savdo dinamikasi</div>
+                <div className="card-subtitle">So'nggi 14 kun</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div className="card-subtitle">Shu oy savdosi</div>
+                <div className="strong tnum" style={{ fontSize: 16 }}>{som(month.revenue)}</div>
+              </div>
+            </div>
+            <div className="chart-box">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 10, right: 8, left: 8, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#2563eb" stopOpacity={0.18} />
+                      <stop offset="100%" stopColor="#2563eb" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke="#eef0f3" vertical={false} />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11.5, fill: '#98a2b3' }} interval="preserveStartEnd" />
+                  <YAxis tickLine={false} axisLine={false} width={64} tick={{ fontSize: 11.5, fill: '#98a2b3' }} tickFormatter={compactMoney} />
+                  <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#d0d5dd' }} />
+                  <Area type="monotone" dataKey="revenue" stroke="#2563eb" strokeWidth={2} fill="url(#rev)" activeDot={{ r: 4 }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-header">
+              <div>
+                <div className="card-title">Ombor holati</div>
+                <div className="card-subtitle">{inventory.products} ta faol mahsulot</div>
+              </div>
+            </div>
+            <div className="kv-list">
+              <div className="kv"><span className="kv-label"><Boxes size={16} />Ombor qiymati (tannarx)</span><span className="kv-value">{som(inventory.stock_value)}</span></div>
+              <div className="kv"><span className="kv-label"><Package size={16} />Sotuv narxida</span><span className="kv-value">{som(inventory.retail_value)}</span></div>
+              <div className="kv"><span className="kv-label"><Wallet size={16} />Mijozlardagi avans</span><span className="kv-value">{som(customers.total_advance)}</span></div>
+              <div className="kv link" onClick={() => navigate('alerts')}>
+                <span className="kv-label"><AlertTriangle size={16} />Kam qolgan / tugagan</span>
+                <span className={`kv-value ${inventory.low_stock ? 'text-warning' : ''}`}>{inventory.low_stock} ta <ChevronRight size={14} className="muted" /></span>
+              </div>
+              <div className="kv link" onClick={() => navigate('alerts')}>
+                <span className="kv-label"><CalendarClock size={16} />Muddati yaqin / o'tgan</span>
+                <span className={`kv-value ${inventory.expired ? 'text-danger' : inventory.expiring ? 'text-warning' : ''}`}>
+                  {inventory.expiring} / {inventory.expired} <ChevronRight size={14} className="muted" />
+                </span>
+              </div>
+            </div>
+            {alertsTotal === 0 && <div className="card-body muted" style={{ fontSize: 12.5, paddingTop: 0 }}>Ombor bo'yicha ogohlantirish yo'q.</div>}
+          </div>
+        </div>
+
+        <div className="dash-grid even">
+          <div className="card">
+            <div className="card-header"><div><div className="card-title">Eng ko'p sotilganlar</div><div className="card-subtitle">Shu oy, savdo summasi bo'yicha</div></div></div>
             {stats.topProducts.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', padding: 20, textAlign: 'center' }}>Hali sotuv yo'q</p>
+              <EmptyState icon={Package} title="Shu oy hali sotuv yo'q" />
             ) : (
-              <div className="table-container">
-                <table>
-                  <thead><tr><th>#</th><th>Mahsulot</th><th>Sotilgan</th><th>Daromad</th></tr></thead>
+              <div className="table-wrap">
+                <table className="table table-sm">
+                  <thead><tr><th>Mahsulot</th><th className="num">Sotildi</th><th className="num">Savdo</th></tr></thead>
                   <tbody>
-                    {stats.topProducts.map((p, i) => (
-                      <tr key={i}>
-                        <td>{i + 1}</td>
-                        <td>{p.name}</td>
-                        <td>{p.qty} dona</td>
-                        <td>{formatMoney(p.revenue)}</td>
+                    {stats.topProducts.map((p) => (
+                      <tr key={p.id}>
+                        <td><div className="cell-title">{p.name}</div><div className="cell-sub">{productMeta(p) || '—'}</div></td>
+                        <td className="num">{p.qty}</td>
+                        <td className="num strong">{money(p.revenue)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -142,22 +147,24 @@ export default function Dashboard({ setPage }) {
             )}
           </div>
 
-          {/* Recent Sales */}
           <div className="card">
-            <h3 style={{ marginBottom: 12 }}>🕐 Oxirgi sotuvlar</h3>
+            <div className="card-header">
+              <div><div className="card-title">So'nggi sotuvlar</div><div className="card-subtitle">Chekni ochish uchun bosing</div></div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate('sales')}>Barchasi<ChevronRight size={14} /></button>
+            </div>
             {stats.recentSales.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', padding: 20, textAlign: 'center' }}>Hali sotuv yo'q</p>
+              <EmptyState icon={Receipt} title="Hali sotuv yo'q" />
             ) : (
-              <div className="table-container">
-                <table>
-                  <thead><tr><th>Chek</th><th>Mijoz</th><th>Summa</th><th>Vaqt</th></tr></thead>
+              <div className="table-wrap">
+                <table className="table table-sm">
+                  <thead><tr><th>Chek</th><th>Vaqt</th><th>Mijoz</th><th className="num">Summa</th></tr></thead>
                   <tbody>
                     {stats.recentSales.map((s) => (
-                      <tr key={s.id}>
-                        <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{s.sale_number}</td>
-                        <td>{s.customer_name || '—'}</td>
-                        <td>{formatMoney(s.final_total)}</td>
-                        <td style={{ fontSize: 12 }}>{new Date(s.created_at).toLocaleTimeString('uz-UZ')}</td>
+                      <tr key={s.id} className="clickable" onClick={() => setSaleId(s.id)}>
+                        <td className="mono">{s.sale_number}</td>
+                        <td className="secondary">{fmtTime(s.created_at)}</td>
+                        <td>{s.customer_name || <span className="muted">Mijozsiz</span>}</td>
+                        <td className="num strong">{money(s.final_total)}{s.debt_amount > 0 && <div className="cell-sub text-danger">qarz {money(s.debt_amount)}</div>}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -167,6 +174,7 @@ export default function Dashboard({ setPage }) {
           </div>
         </div>
       </div>
+      {saleId && <SaleDetail saleId={saleId} onClose={() => setSaleId(null)} onChanged={load} />}
     </>
   );
 }

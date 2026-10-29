@@ -1,88 +1,87 @@
+'use strict';
+
 const { contextBridge, ipcRenderer } = require('electron');
 
+// IPC javobini ochib beradi: xato bo'lsa toza o'zbekcha xabar bilan Error tashlaydi
+const call = (channel) => (...args) => ipcRenderer.invoke(channel, ...args).then((res) => {
+  if (!res || !res.ok) throw new Error((res && res.error) || "Noma'lum xatolik");
+  return res.data;
+});
+
+const on = (channel) => (callback) => {
+  const listener = (_event, data) => callback(data);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+};
+
 contextBridge.exposeInMainWorld('api', {
-  // Products
+  app: {
+    info: call('app:info'),
+    openBackupFolder: call('app:openBackupFolder'),
+  },
   products: {
-    getAll: () => ipcRenderer.invoke('products:getAll'),
-    getById: (id) => ipcRenderer.invoke('products:getById', id),
-    search: (query) => ipcRenderer.invoke('products:search', query),
-    getByBarcode: (barcode) => ipcRenderer.invoke('products:getByBarcode', barcode),
-    create: (product) => ipcRenderer.invoke('products:create', product),
-    update: (id, product) => ipcRenderer.invoke('products:update', id, product),
-    delete: (id) => ipcRenderer.invoke('products:delete', id),
-    getLowStock: () => ipcRenderer.invoke('products:getLowStock'),
-    getExpiring: (days) => ipcRenderer.invoke('products:getExpiring', days),
-    getCategories: () => ipcRenderer.invoke('products:getCategories'),
+    getAll: call('products:getAll'),
+    getById: call('products:getById'),
+    create: call('products:create'),
+    update: call('products:update'),
+    remove: call('products:remove'),
+    nextCode: call('products:nextCode'),
+    lowStock: call('products:lowStock'),
+    expiring: call('products:expiring'),
+    categories: call('products:categories'),
+    brands: call('products:brands'),
   },
-
-  // Sales
-  sales: {
-    create: (sale) => ipcRenderer.invoke('sales:create', sale),
-    getAll: (filters) => ipcRenderer.invoke('sales:getAll', filters),
-    getById: (id) => ipcRenderer.invoke('sales:getById', id),
-    refund: (saleId, items) => ipcRenderer.invoke('sales:refund', saleId, items),
-    getStats: (period) => ipcRenderer.invoke('sales:getStats', period),
-  },
-
-  // Stock
   stock: {
-    receive: (receipt) => ipcRenderer.invoke('stock:receive', receipt),
-    getReceipts: (filters) => ipcRenderer.invoke('stock:getReceipts', filters),
-    getReceiptById: (id) => ipcRenderer.invoke('stock:getReceiptById', id),
-    getBatches: (productId) => ipcRenderer.invoke('stock:getBatches', productId),
+    receive: call('stock:receive'),
+    receipts: call('stock:receipts'),
+    receiptById: call('stock:receiptById'),
   },
-
-  // Customers
+  sales: {
+    create: call('sales:create'),
+    list: call('sales:list'),
+    getById: call('sales:getById'),
+    refund: call('sales:refund'),
+  },
   customers: {
-    getAll: () => ipcRenderer.invoke('customers:getAll'),
-    getById: (id) => ipcRenderer.invoke('customers:getById', id),
-    create: (customer) => ipcRenderer.invoke('customers:create', customer),
-    update: (id, customer) => ipcRenderer.invoke('customers:update', id, customer),
-    delete: (id) => ipcRenderer.invoke('customers:delete', id),
-    search: (query) => ipcRenderer.invoke('customers:search', query),
+    list: call('customers:list'),
+    getById: call('customers:getById'),
+    create: call('customers:create'),
+    update: call('customers:update'),
+    remove: call('customers:remove'),
+    summary: call('customers:summary'),
+    deposit: call('customers:deposit'),
+    withdraw: call('customers:withdraw'),
+    adjust: call('customers:adjust'),
   },
-
-  // Suppliers
-  suppliers: {
-    getAll: () => ipcRenderer.invoke('suppliers:getAll'),
-    create: (supplier) => ipcRenderer.invoke('suppliers:create', supplier),
-    update: (id, supplier) => ipcRenderer.invoke('suppliers:update', id, supplier),
-    delete: (id) => ipcRenderer.invoke('suppliers:delete', id),
-  },
-
-  // Dashboard & Reports
   dashboard: {
-    getStats: () => ipcRenderer.invoke('dashboard:getStats'),
+    stats: call('dashboard:stats'),
   },
   reports: {
-    sales: (filters) => ipcRenderer.invoke('reports:sales', filters),
-    products: (filters) => ipcRenderer.invoke('reports:products', filters),
-    profit: (filters) => ipcRenderer.invoke('reports:profit', filters),
+    sales: call('reports:sales'),
+    products: call('reports:products'),
+    categories: call('reports:categories'),
+    cashflow: call('reports:cashflow'),
   },
-
-  // Backup
-  backup: {
-    create: () => ipcRenderer.invoke('backup:create'),
-    restore: () => ipcRenderer.invoke('backup:restore'),
-  },
-
-  // Settings
   settings: {
-    get: () => ipcRenderer.invoke('settings:get'),
-    update: (settings) => ipcRenderer.invoke('settings:update', settings),
+    get: call('settings:get'),
+    update: call('settings:update'),
   },
-
-  // Audit
   audit: {
-    getLog: (filters) => ipcRenderer.invoke('audit:getLog', filters),
+    list: call('audit:list'),
   },
-
-  // Updates
+  backup: {
+    info: call('backup:info'),
+    create: call('backup:create'),
+    restore: call('backup:restore'),
+  },
   updates: {
-    startDownload: () => ipcRenderer.invoke('start-update-download'),
-    install: () => ipcRenderer.invoke('install-update'),
-    onAvailable: (cb) => ipcRenderer.on('update-available', (_, data) => cb(data)),
-    onProgress: (cb) => ipcRenderer.on('update-progress', (_, data) => cb(data)),
-    onDownloaded: (cb) => ipcRenderer.on('update-downloaded', () => cb()),
+    check: call('updates:check'),
+    download: call('updates:download'),
+    install: call('updates:install'),
+    onAvailable: on('update:available'),
+    onNotAvailable: on('update:not-available'),
+    onProgress: on('update:progress'),
+    onDownloaded: on('update:downloaded'),
+    onError: on('update:error'),
   },
 });
