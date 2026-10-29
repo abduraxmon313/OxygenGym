@@ -1,0 +1,53 @@
+name: Build & Release OxygenGym
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install main dependencies
+        run: npm install
+
+      - name: Install renderer dependencies
+        run: |
+          cd renderer
+          npm install
+          cd ..
+
+      - name: Build React app
+        run: |
+          cd renderer
+          npm run build
+          cd ..
+
+      - name: Build Electron app (.EXE)
+        run: npx electron-builder --win --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.exe
+            dist/*.yml
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
