@@ -5,16 +5,17 @@ import { CategorySelect, EmptyState, PageHeader, Pill, ProductThumb, SearchInput
 import ProductForm from '../components/ProductForm';
 import StockManager from '../components/StockManager';
 import { useConfirm } from '../components/ConfirmDialog';
-import { categoryLabel, fmtDate, money, productMeta, som } from '../lib/format';
+import { categoryLabel, fmtDate, money, productMeta, som, unitLabel } from '../lib/format';
+import { t } from '../lib/i18n';
 
 function StockPill({ p }) {
-  if (p.sellable <= 0 && p.expired_qty > 0) return <Pill tone="danger">Muddati o'tgan · {p.expired_qty}</Pill>;
-  if (p.sellable <= 0) return <Pill tone="danger">Tugagan</Pill>;
+  if (p.sellable <= 0 && p.expired_qty > 0) return <Pill tone="danger">{t("Muddati o'tgan")} · {p.expired_qty}</Pill>;
+  if (p.sellable <= 0) return <Pill tone="danger">{t('Tugagan')}</Pill>;
   const tone = p.sellable <= p.min_stock ? 'warning' : 'success';
   return (
     <span className="stack-sm" style={{ alignItems: 'flex-end', gap: 2 }}>
-      <Pill tone={tone}>{p.sellable} {p.unit}</Pill>
-      {p.expired_qty > 0 && <span className="cell-sub text-danger">+{p.expired_qty} muddati o'tgan</span>}
+      <Pill tone={tone}>{p.sellable} {unitLabel(p.unit)}</Pill>
+      {p.expired_qty > 0 && <span className="cell-sub text-danger">{t("+{n} muddati o'tgan", { n: p.expired_qty })}</span>}
     </span>
   );
 }
@@ -70,16 +71,16 @@ export default function Products({ refreshAlerts, settings }) {
 
   async function archive(p) {
     const ok = await confirm({
-      title: 'Mahsulotni arxivlash',
-      message: `"${p.name}" sotuv oynasi va ro'yxatlardan yashiriladi. Sotuvlar tarixi saqlanadi, istalgan vaqt "Arxiv" bo'limidan qaytarish mumkin.${
-        p.stock > 0 ? `\n\nOmborda ${p.stock} ${p.unit} bor. Agar tovar yo'q bo'lsa, avval "Ombor holati" orqali hisobdan chiqaring — aks holda ombor qiymatida noto'g'ri qolib ketadi.` : ''}`,
-      confirmText: 'Arxivlash',
+      title: t('Mahsulotni arxivlash'),
+      message: t('"{name}" sotuv oynasi va ro\'yxatlardan yashiriladi. Sotuvlar tarixi saqlanadi, istalgan vaqt "Arxiv" bo\'limidan qaytarish mumkin.', { name: p.name })
+        + (p.stock > 0 ? `\n\n${t('Omborda {n} {u} bor. Agar tovar yo\'q bo\'lsa, avval "Ombor holati" orqali hisobdan chiqaring — aks holda ombor qiymatida noto\'g\'ri qolib ketadi.', { n: p.stock, u: unitLabel(p.unit) })}` : ''),
+      confirmText: t('Arxivlash'),
       danger: true,
     });
     if (!ok) return;
     try {
       await window.api.products.remove(p.id);
-      toast.success('Mahsulot arxivlandi');
+      toast.success(t('Mahsulot arxivlandi'));
       changed();
     } catch (err) {
       toast.error(err.message);
@@ -89,7 +90,7 @@ export default function Products({ refreshAlerts, settings }) {
   async function restore(p) {
     try {
       await window.api.products.restore(p.id);
-      toast.success(`"${p.name}" arxivdan qaytarildi`);
+      toast.success(t('"{name}" arxivdan qaytarildi', { name: p.name }));
       changed();
     } catch (err) {
       toast.error(err.message);
@@ -99,24 +100,24 @@ export default function Products({ refreshAlerts, settings }) {
   return (
     <>
       <PageHeader
-        title="Mahsulotlar"
-        subtitle={`${products.length} ta faol · ${archived.length} ta arxivda`}
-        actions={<button type="button" className="btn btn-primary" onClick={() => setForm({ mode: 'create' })}><Plus size={16} />Yangi mahsulot</button>}
+        title={t('Mahsulotlar')}
+        subtitle={t('{a} ta faol · {b} ta arxivda', { a: products.length, b: archived.length })}
+        actions={<button type="button" className="btn btn-primary" onClick={() => setForm({ mode: 'create' })}><Plus size={16} />{t('Yangi mahsulot')}</button>}
       />
       <div className="content">
         <Tabs
           value={tab}
-          onChange={(t) => { setTab(t); setStockFilter('all'); }}
-          tabs={[{ id: 'active', label: 'Faol', count: products.length }, { id: 'archived', label: 'Arxiv', count: archived.length }]}
+          onChange={(v) => { setTab(v); setStockFilter('all'); }}
+          tabs={[{ id: 'active', label: t('Faol'), count: products.length }, { id: 'archived', label: t('Arxiv'), count: archived.length }]}
         />
         <div className="toolbar">
-          <SearchInput value={query} onChange={setQuery} placeholder="Nomi, brend, ta'm yoki kod" />
+          <SearchInput value={query} onChange={setQuery} placeholder={t("Nomi, brend, ta'm yoki kod")} />
           <div style={{ width: 260 }}>
-            <CategorySelect categories={categories} value={category} onChange={setCategory} emptyLabel="Barcha kategoriyalar" />
+            <CategorySelect categories={categories} value={category} onChange={setCategory} emptyLabel={t('Barcha kategoriyalar')} />
           </div>
           {tab === 'active' && (
             <Segmented
-              options={[{ id: 'all', label: 'Hammasi' }, { id: 'low', label: 'Kam qolgan' }, { id: 'out', label: 'Tugagan' }, { id: 'expired', label: "Muddati o'tgan" }]}
+              options={[{ id: 'all', label: t('Hammasi') }, { id: 'low', label: t('Kam qolgan') }, { id: 'out', label: t('Tugagan') }, { id: 'expired', label: t("Muddati o'tgan") }]}
               value={stockFilter}
               onChange={setStockFilter}
             />
@@ -126,13 +127,13 @@ export default function Products({ refreshAlerts, settings }) {
         {filtered.length === 0 ? (
           <div className="table-wrap">
             {tab === 'archived' ? (
-              <EmptyState icon={Archive} title="Arxiv bo'sh" text="Arxivlangan mahsulotlar shu yerda saqlanadi va istalgan vaqt qaytariladi" />
+              <EmptyState icon={Archive} title={t("Arxiv bo'sh")} text={t('Arxivlangan mahsulotlar shu yerda saqlanadi va istalgan vaqt qaytariladi')} />
             ) : (
               <EmptyState
                 icon={Package}
-                title={products.length ? 'Mahsulot topilmadi' : "Hali mahsulot qo'shilmagan"}
-                text={products.length ? "Filtrlarni o'zgartirib ko'ring" : "Har bir ta'm yoki hajm alohida mahsulot sifatida yaratiladi."}
-                action={!products.length && <button type="button" className="btn btn-primary" onClick={() => setForm({ mode: 'create' })}><Plus size={16} />Mahsulot qo'shish</button>}
+                title={products.length ? t('Mahsulot topilmadi') : t("Hali mahsulot qo'shilmagan")}
+                text={products.length ? t("Filtrlarni o'zgartirib ko'ring") : t("Har bir ta'm yoki hajm alohida mahsulot sifatida yaratiladi.")}
+                action={!products.length && <button type="button" className="btn btn-primary" onClick={() => setForm({ mode: 'create' })}><Plus size={16} />{t("Mahsulot qo'shish")}</button>}
               />
             )}
           </div>
@@ -142,13 +143,13 @@ export default function Products({ refreshAlerts, settings }) {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Mahsulot</th>
-                    <th>Kod</th>
-                    <th>Kategoriya</th>
-                    <th className="num">Tannarx</th>
-                    <th className="num">Sotuv narxi</th>
-                    <th className="num">Ustama</th>
-                    <th className="num">{tab === 'active' ? 'Qoldiq' : 'Arxivlangan'}</th>
+                    <th>{t('Mahsulot')}</th>
+                    <th>{t('Kod')}</th>
+                    <th>{t('Kategoriya')}</th>
+                    <th className="num">{t('Tannarx')}</th>
+                    <th className="num">{t('Sotuv narxi')}</th>
+                    <th className="num">{t('Ustama')}</th>
+                    <th className="num">{tab === 'active' ? t('Qoldiq') : t('Arxivlangan')}</th>
                     <th className="actions" />
                   </tr>
                 </thead>
@@ -171,19 +172,19 @@ export default function Products({ refreshAlerts, settings }) {
                         <td className={`num ${markup !== null && markup < 0 ? 'text-danger' : 'secondary'}`}>{markup === null ? '—' : `${markup}%`}</td>
                         <td className="num">
                           {tab === 'active' ? <StockPill p={p} /> : (
-                            <><div className="secondary">{fmtDate(p.updated_at)}</div>{p.stock > 0 && <div className="cell-sub text-warning">qoldiq {p.stock} {p.unit}</div>}</>
+                            <><div className="secondary">{fmtDate(p.updated_at)}</div>{p.stock > 0 && <div className="cell-sub text-warning">{t('qoldiq {n} {u}', { n: p.stock, u: unitLabel(p.unit) })}</div>}</>
                           )}
                         </td>
                         <td className="actions" onClick={(e) => e.stopPropagation()}>
                           {tab === 'active' ? (
                             <div className="row">
-                              <button type="button" className="btn btn-ghost btn-icon btn-sm" title="Ombor holati" onClick={() => setStockId(p.id)}><Boxes size={15} /></button>
-                              <button type="button" className="btn btn-ghost btn-icon btn-sm" title="Tahrirlash" onClick={() => setForm({ mode: 'edit', source: p })}><Pencil size={15} /></button>
-                              <button type="button" className="btn btn-ghost btn-icon btn-sm" title="Boshqa ta'm/hajm uchun nusxa" onClick={() => setForm({ mode: 'duplicate', source: p })}><Copy size={15} /></button>
-                              <button type="button" className="btn btn-ghost btn-icon btn-sm" title="Arxivlash" onClick={() => archive(p)}><Archive size={15} /></button>
+                              <button type="button" className="btn btn-ghost btn-icon btn-sm" title={t('Ombor holati')} onClick={() => setStockId(p.id)}><Boxes size={15} /></button>
+                              <button type="button" className="btn btn-ghost btn-icon btn-sm" title={t('Tahrirlash')} onClick={() => setForm({ mode: 'edit', source: p })}><Pencil size={15} /></button>
+                              <button type="button" className="btn btn-ghost btn-icon btn-sm" title={t("Boshqa ta'm/hajm uchun nusxa")} onClick={() => setForm({ mode: 'duplicate', source: p })}><Copy size={15} /></button>
+                              <button type="button" className="btn btn-ghost btn-icon btn-sm" title={t('Arxivlash')} onClick={() => archive(p)}><Archive size={15} /></button>
                             </div>
                           ) : (
-                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => restore(p)}><ArchiveRestore size={15} />Qaytarish</button>
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => restore(p)}><ArchiveRestore size={15} />{t('Qaytarish')}</button>
                           )}
                         </td>
                       </tr>
@@ -193,8 +194,8 @@ export default function Products({ refreshAlerts, settings }) {
               </table>
             </div>
             <div className="table-footer-note">
-              <span>{filtered.length} ta mahsulot · {totals.units} dona omborda</span>
-              <span>Ombor qiymati (tannarx): <strong className="tnum" style={{ color: 'var(--text)' }}>{som(totals.value)}</strong></span>
+              <span>{t('{n} ta mahsulot · {u} dona omborda', { n: filtered.length, u: totals.units })}</span>
+              <span>{t('Ombor qiymati (tannarx)')}: <strong className="tnum" style={{ color: 'var(--text)' }}>{som(totals.value)}</strong></span>
             </div>
           </>
         )}

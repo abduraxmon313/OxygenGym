@@ -1,6 +1,6 @@
 {
   "name": "oxygengym",
-  "version": "1.3.0",
+  "version": "1.4.2",
   "description": "OxygenGym — zal bari uchun savdo va ombor dasturi",
   "main": "main.js",
   "scripts": {
@@ -46,7 +46,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "OxygenGym",
-      "artifactName": "OxygenGym-Setup-${version}.${ext}"
+      "artifactName": "OxygenGym-Setup-${version}.${ext}",
+      "include": "scripts/nsis-icon-refresh.nsh"
     },
     "publish": [
       {

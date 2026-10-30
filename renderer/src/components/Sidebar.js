@@ -3,49 +3,57 @@ import {
   AlertTriangle, BarChart3, LayoutDashboard, Moon, Package, PackagePlus, Receipt, ScrollText, Settings, ShoppingCart, Sun, Users,
 } from 'lucide-react';
 import { useTheme } from '../lib/theme';
+import { LANGUAGES, t, useLang } from '../lib/i18n';
 
-export const NAV_GROUPS = [
+const navGroups = () => [
   {
-    title: 'Asosiy',
+    id: 'main',
+    title: t('Asosiy'),
     items: [
-      { id: 'dashboard', label: 'Bosh panel', icon: LayoutDashboard },
-      { id: 'pos', label: 'Sotuv', icon: ShoppingCart },
+      { id: 'dashboard', label: t('Bosh panel'), icon: LayoutDashboard },
+      { id: 'pos', label: t('Sotuv'), icon: ShoppingCart },
     ],
   },
   {
-    title: 'Ombor',
+    id: 'stock',
+    title: t('Ombor'),
     items: [
-      { id: 'products', label: 'Mahsulotlar', icon: Package },
-      { id: 'stock', label: 'Kirim', icon: PackagePlus },
-      { id: 'alerts', label: 'Ogohlantirishlar', icon: AlertTriangle, badge: true },
+      { id: 'products', label: t('Mahsulotlar'), icon: Package },
+      { id: 'stock', label: t('Kirim'), icon: PackagePlus },
+      { id: 'alerts', label: t('Ogohlantirishlar'), icon: AlertTriangle, badge: true },
     ],
   },
   {
-    title: 'Savdo',
+    id: 'trade',
+    title: t('Savdo'),
     items: [
-      { id: 'sales', label: 'Sotuvlar', icon: Receipt },
-      { id: 'customers', label: 'Mijozlar', icon: Users },
+      { id: 'sales', label: t('Sotuvlar'), icon: Receipt },
+      { id: 'customers', label: t('Mijozlar'), icon: Users },
     ],
   },
   {
-    title: 'Tahlil',
+    id: 'analytics',
+    title: t('Tahlil'),
     items: [
-      { id: 'reports', label: 'Hisobotlar', icon: BarChart3 },
-      { id: 'audit', label: 'Harakatlar jurnali', icon: ScrollText },
+      { id: 'reports', label: t('Hisobotlar'), icon: BarChart3 },
+      { id: 'audit', label: t('Harakatlar jurnali'), icon: ScrollText },
     ],
   },
   {
-    title: 'Tizim',
-    items: [{ id: 'settings', label: 'Sozlamalar', icon: Settings }],
+    id: 'system',
+    title: t('Tizim'),
+    items: [{ id: 'settings', label: t('Sozlamalar'), icon: Settings }],
   },
 ];
 
 function BrandMark() {
-  // Logo fayli renderer/public/logo.png — u yo'q bo'lsa matnli belgi ko'rsatiladi
+  // Logo: renderer/public/logo.png (assets/brand dan build vaqtida olinadi)
+  // ?v= qo'shimchasi keshdan eski logoni olishni oldini oladi
   const [failed, setFailed] = useState(false);
+  const ver = typeof window !== 'undefined' && window.__OXYGENGYM_VERSION__ ? window.__OXYGENGYM_VERSION__ : '0';
   return (
     <div className="brand-mark">
-      {failed ? <span className="fallback">OG</span> : <img src="./logo.png" alt="Oxygen Fitness" onError={() => setFailed(true)} />}
+      {failed ? <span className="fallback">OG</span> : <img src={`./logo.png?v=${ver}`} alt="OxygenGym" onError={() => setFailed(true)} />}
     </div>
   );
 }
@@ -53,9 +61,24 @@ function BrandMark() {
 export function ThemeSwitch() {
   const { theme, setTheme } = useTheme();
   return (
-    <div className="theme-switch" role="group" aria-label="Ko'rinish rejimi">
-      <button type="button" className={theme === 'light' ? 'active' : ''} onClick={() => setTheme('light')}><Sun size={14} />Kunduzgi</button>
-      <button type="button" className={theme === 'dark' ? 'active' : ''} onClick={() => setTheme('dark')}><Moon size={14} />Tungi</button>
+    <div className="theme-switch" role="group" aria-label={t("Ko'rinish")}>
+      <button type="button" title={t('Kunduzgi')} className={theme === 'light' ? 'active' : ''} onClick={() => setTheme('light')}>
+        <Sun size={14} /><span>{t('Kunduzgi')}</span>
+      </button>
+      <button type="button" title={t('Tungi')} className={theme === 'dark' ? 'active' : ''} onClick={() => setTheme('dark')}>
+        <Moon size={14} /><span>{t('Tungi')}</span>
+      </button>
+    </div>
+  );
+}
+
+export function LangSwitch() {
+  const { lang, setLang } = useLang();
+  return (
+    <div className="theme-switch lang" role="group" aria-label={t('Til')}>
+      {LANGUAGES.map((l) => (
+        <button key={l.id} type="button" title={l.label} className={lang === l.id ? 'active' : ''} onClick={() => setLang(l.id)}>{l.short}</button>
+      ))}
     </div>
   );
 }
@@ -67,27 +90,32 @@ export default function Sidebar({ page, onNavigate, alertCount, shopName, versio
         <BrandMark />
         <div>
           <div className="brand-name">OxygenGym</div>
-          <div className="brand-sub">Savdo va ombor tizimi</div>
+          <div className="brand-sub">{t('Savdo va ombor tizimi')}</div>
         </div>
       </div>
       <nav className="sidebar-nav">
-        {NAV_GROUPS.map((group) => (
-          <div key={group.title} className="nav-group">
+        {navGroups().map((group) => (
+          <div key={group.id} className="nav-group">
             <div className="nav-group-title">{group.title}</div>
             {group.items.map(({ id, label, icon: Icon, badge }) => (
-              <button key={id} type="button" className={`nav-item${page === id ? ' active' : ''}`} onClick={() => onNavigate(id)}>
+              <button key={id} type="button" title={label} className={`nav-item${page === id ? ' active' : ''}`} onClick={() => onNavigate(id)}>
                 <Icon size={18} strokeWidth={1.9} />
-                <span>{label}</span>
+                <span className="label">{label}</span>
                 {badge && alertCount > 0 && <span className="nav-badge">{alertCount > 99 ? '99+' : alertCount}</span>}
               </button>
             ))}
-            {group.title === 'Tizim' && <ThemeSwitch />}
+            {group.id === 'system' && (
+              <div className="pref-group">
+                <ThemeSwitch />
+                <LangSwitch />
+              </div>
+            )}
           </div>
         ))}
       </nav>
       <div className="sidebar-footer">
         <div className="shop">{shopName || 'OxygenGym'}</div>
-        <div className="ver">Versiya {version || '—'}</div>
+        <div className="ver">{t('Versiya {v}', { v: version || '—' })}</div>
       </div>
     </aside>
   );

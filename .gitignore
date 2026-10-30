@@ -7,6 +7,9 @@ renderer/build/
 .env
 .DS_Store
 Thumbs.db
-node_modules/
 package-lock.json
+
+# Build paytida prepare-brand.py yaratadi
 renderer/public/logo.png
+assets/icon.png
+assets/icon.ico

@@ -1,8 +1,7 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-const fs = require('fs');
 const log = require('electron-log');
 const { autoUpdater } = require('electron-updater');
 const DB = require('./src/database');
@@ -12,6 +11,9 @@ let mainWindow = null;
 const isDev = process.env.NODE_ENV === 'development';
 const UPDATE_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
+// Sana maydonlari kun.oy.yil tartibida ko'rinsin (tizim tili ingliz-AQSh bo'lsa ham)
+app.commandLine.appendSwitch('lang', 'en-GB');
+
 // ===== IPC: barcha xatolar renderer'ga toza matn sifatida qaytadi =====
 function handle(channel, fn) {
   ipcMain.handle(channel, async (_event, ...args) => {
@@ -19,7 +21,7 @@ function handle(channel, fn) {
       return { ok: true, data: await fn(...args) };
     } catch (err) {
       log.warn(`[ipc] ${channel}:`, err && err.message);
-      return { ok: false, error: (err && err.message) || String(err) };
+      return { ok: false, error: (err && err.message) || String(err), code: err && err.code };
     }
   });
 }
@@ -33,10 +35,10 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
-    minWidth: 1180,
-    minHeight: 720,
+    minWidth: 1000,
+    minHeight: 640,
     title: 'OxygenGym',
-    backgroundColor: '#f4f5f7',
+    backgroundColor: '#e9ecf1',
     icon: path.join(__dirname, 'assets', 'icon.png'),
     autoHideMenuBar: true,
     show: false,
@@ -66,6 +68,7 @@ function createWindow() {
   });
   mainWindow.on('closed', () => { mainWindow = null; });
   mainWindow.webContents.once('did-finish-load', () => {
+    mainWindow.webContents.executeJavaScript(`window.__OXYGENGYM_VERSION__=${JSON.stringify(app.getVersion())}`).catch(() => {});
     setTimeout(checkForUpdates, 5000);
   });
 }
@@ -75,13 +78,18 @@ autoUpdater.logger = log;
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 
-autoUpdater.on('update-available', (info) => send('update:available', { version: info.version }));
+let downloading = false;
+autoUpdater.on('update-available', (info) => { if (!downloading) send('update:available', { version: info.version }); });
 autoUpdater.on('update-not-available', () => send('update:not-available'));
 autoUpdater.on('download-progress', (p) => send('update:progress', { percent: Math.round(p.percent) }));
-autoUpdater.on('update-downloaded', (info) => send('update:downloaded', { version: info.version }));
+autoUpdater.on('update-downloaded', (info) => {
+  downloading = false;
+  send('update:downloaded', { version: info.version });
+});
 autoUpdater.on('error', (err) => {
   log.warn('Updater error:', err && err.message);
-  send('update:error', { message: (err && err.message) || 'Noma\'lum xatolik' });
+  // Yuklab olish xatolari downloadUpdate() ichida (qayta urinish bilan) ko'rsatiladi
+  if (!downloading) send('update:error', { message: (err && err.message) || 'Noma\'lum xatolik' });
 });
 
 function checkForUpdates() {
@@ -108,8 +116,28 @@ handle('updates:check', async () => {
   const latest = result && result.updateInfo ? result.updateInfo.version : null;
   return { available: Boolean(latest && isNewer(latest, app.getVersion())), latest, current: app.getVersion() };
 });
+// Nazorat summasi mos kelmasa (masalan, release fayllari yuklanayotgan paytda yangilanish boshlangan bo'lsa)
+// bir marta qisman (differential) emas, to'liq yuklab olib qayta urinamiz.
+let downloadRetried = false;
+function downloadUpdate() {
+  return autoUpdater.downloadUpdate().catch((err) => {
+    const message = (err && err.message) || '';
+    if (!downloadRetried && /sha512|checksum/i.test(message)) {
+      downloadRetried = true;
+      log.warn('Checksum mismatch, retrying full download');
+      autoUpdater.disableDifferentialDownload = true;
+      return autoUpdater.checkForUpdates().then(() => downloadUpdate());
+    }
+    downloading = false;
+    send('update:error', { message, code: /sha512|checksum/i.test(message) ? 'CHECKSUM' : undefined });
+    return null;
+  });
+}
+
 handle('updates:download', () => {
-  autoUpdater.downloadUpdate().catch((err) => send('update:error', { message: err.message }));
+  downloadRetried = false;
+  downloading = true;
+  downloadUpdate();
   return true;
 });
 handle('updates:install', () => {
@@ -121,15 +149,8 @@ handle('updates:install', () => {
 handle('app:info', () => ({
   version: app.getVersion(),
   dataDir: db.dataDir,
-  backupDir: db.backupDir,
   isPackaged: app.isPackaged,
 }));
-handle('app:openBackupFolder', async () => {
-  fs.mkdirSync(db.backupDir, { recursive: true });
-  const error = await shell.openPath(db.backupDir);
-  if (error) throw new Error(error);
-  return true;
-});
 
 // ===== PRODUCTS =====
 handle('products:getAll', () => db.getProducts());
@@ -184,30 +205,8 @@ handle('reports:losses', (f) => db.getLossReport(f));
 // ===== SETTINGS & AUDIT =====
 handle('settings:get', () => db.getSettings());
 handle('settings:update', (s) => db.updateSettings(s));
+handle('settings:setLanguage', (lang) => db.setLanguage(lang));
 handle('audit:list', (f) => db.getAuditLog(f));
-
-// ===== BACKUP =====
-handle('backup:info', () => db.getBackupInfo());
-handle('backup:create', async () => {
-  const d = new Date();
-  const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'Zaxira nusxani saqlash',
-    defaultPath: `OxygenGym-zaxira-${stamp}.db`,
-    filters: [{ name: 'OxygenGym zaxira nusxasi', extensions: ['db'] }],
-  });
-  if (result.canceled || !result.filePath) return null;
-  return db.createBackup(result.filePath);
-});
-handle('backup:restore', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Zaxira nusxadan tiklash',
-    filters: [{ name: 'OxygenGym zaxira nusxasi', extensions: ['db'] }],
-    properties: ['openFile'],
-  });
-  if (result.canceled || !result.filePaths[0]) return null;
-  return db.restoreBackup(result.filePaths[0]);
-});
 
 // ===== LIFECYCLE =====
 async function start() {
@@ -219,7 +218,6 @@ async function start() {
     app.quit();
     return;
   }
-  db.autoBackup().catch((err) => log.warn('Auto backup failed:', err && err.message));
   createWindow();
   setInterval(checkForUpdates, UPDATE_INTERVAL_MS);
 }

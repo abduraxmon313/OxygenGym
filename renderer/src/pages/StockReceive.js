@@ -6,7 +6,8 @@ import MoneyInput from '../components/MoneyInput';
 import ProductForm from '../components/ProductForm';
 import { useConfirm } from '../components/ConfirmDialog';
 import { DateRange, EmptyState, PageHeader, Pill, SearchInput } from '../components/ui';
-import { daysAgo, fmtDate, fmtDateTime, isoDate, money, productMeta, som } from '../lib/format';
+import { daysAgo, fmtDate, fmtDateTime, isoDate, money, productMeta, som, unitLabel } from '../lib/format';
+import { t } from '../lib/i18n';
 
 function ReceiptForm({ products, categories, brands, defaultMinStock, onClose, onSaved, onProductCreated }) {
   const [lines, setLines] = useState([]);
@@ -27,7 +28,7 @@ function ReceiptForm({ products, categories, brands, defaultMinStock, onClose, o
 
   function addLine(p) {
     if (lines.some((l) => l.product_id === p.id)) {
-      toast("Bu mahsulot ro'yxatda bor — miqdorni o'zgartiring");
+      toast(t("Bu mahsulot ro'yxatda bor — miqdorni o'zgartiring"));
     } else {
       setLines((prev) => [...prev, {
         product_id: p.id, name: p.name, meta: productMeta(p), code: p.code, unit: p.unit || 'dona',
@@ -46,18 +47,18 @@ function ReceiptForm({ products, categories, brands, defaultMinStock, onClose, o
 
   async function close() {
     if (lines.length) {
-      const ok = await confirm({ title: 'Kirimni bekor qilish', message: "Kiritilgan ma'lumotlar saqlanmaydi.", confirmText: 'Bekor qilish', cancelText: 'Davom etish', danger: true });
+      const ok = await confirm({ title: t('Kirimni bekor qilish'), message: t("Kiritilgan ma'lumotlar saqlanmaydi."), confirmText: t('Bekor qilish'), cancelText: t('Davom etish'), danger: true });
       if (!ok) return;
     }
     onClose();
   }
 
   async function save() {
-    if (!lines.length) return toast.error("Kamida bitta mahsulot qo'shing");
+    if (!lines.length) return toast.error(t("Kamida bitta mahsulot qo'shing"));
     const bad = lines.find((l) => !(Number(l.quantity) > 0));
-    if (bad) return toast.error(`"${bad.name}" uchun miqdorni kiriting`);
+    if (bad) return toast.error(t('"{name}" uchun miqdorni kiriting', { name: bad.name }));
     const priced = lines.find((l) => !(Number(l.sell_price) > 0));
-    if (priced) return toast.error(`"${priced.name}" uchun sotuv narxini kiriting`);
+    if (priced) return toast.error(t('"{name}" uchun sotuv narxini kiriting', { name: priced.name }));
     setBusy(true);
     try {
       const res = await window.api.stock.receive({
@@ -70,7 +71,7 @@ function ReceiptForm({ products, categories, brands, defaultMinStock, onClose, o
           expiry_date: l.expiry_date || null,
         })),
       });
-      toast.success(`Kirim ${res.receipt_number} saqlandi · ${totalQty} dona`);
+      toast.success(t('Kirim {n} saqlandi · {q} dona', { n: res.receipt_number, q: totalQty }));
       onSaved();
     } catch (err) {
       toast.error(err.message);
@@ -82,16 +83,16 @@ function ReceiptForm({ products, categories, brands, defaultMinStock, onClose, o
     <>
       <Modal
         size="xl"
-        title="Yangi kirim"
-        subtitle="Kelgan mahsulotlar, miqdori, tannarxi va yaroqlilik muddati"
+        title={t('Yangi kirim')}
+        subtitle={t('Kelgan mahsulotlar, miqdori, tannarxi va yaroqlilik muddati')}
         onClose={close}
         footer={(
           <>
             <div className="left secondary tnum" style={{ fontSize: 13 }}>
-              {lines.length} xil · {totalQty} dona · <strong style={{ color: 'var(--text)' }}>{som(totalSum)}</strong>
+              {t('{a} xil · {b} dona', { a: lines.length, b: totalQty })} · <strong style={{ color: 'var(--text)' }}>{som(totalSum)}</strong>
             </div>
-            <button type="button" className="btn btn-secondary" onClick={close}>Bekor qilish</button>
-            <button type="button" className="btn btn-primary" onClick={save} disabled={busy || !lines.length}>Kirimni saqlash</button>
+            <button type="button" className="btn btn-secondary" onClick={close}>{t('Bekor qilish')}</button>
+            <button type="button" className="btn btn-primary" onClick={save} disabled={busy || !lines.length}>{t('Kirimni saqlash')}</button>
           </>
         )}
       >
@@ -103,43 +104,43 @@ function ReceiptForm({ products, categories, brands, defaultMinStock, onClose, o
                 value={query}
                 onChange={setQuery}
                 autoFocus
-                placeholder="Mahsulotni qidiring: nomi, brend yoki kod"
+                placeholder={t('Mahsulotni qidiring: nomi, brend yoki kod')}
                 onKeyDown={(e) => { if (e.key === 'Enter' && results.length) { e.preventDefault(); addLine(results[0]); } }}
               />
               {query.trim() && (
                 <div className="dropdown">
                   {results.length === 0 ? (
-                    <div className="dropdown-empty">Topilmadi. Yangi mahsulot yarating.</div>
+                    <div className="dropdown-empty">{t('Topilmadi. Yangi mahsulot yarating.')}</div>
                   ) : results.map((p) => (
                     <div key={p.id} className="dropdown-item" onClick={() => addLine(p)}>
                       <div style={{ minWidth: 0 }}>
                         <div className="cell-title">{p.name}</div>
-                        <div className="cell-sub">{[productMeta(p), `Kod ${p.code}`].filter(Boolean).join(' · ')}</div>
+                        <div className="cell-sub">{[productMeta(p), t('Kod {c}', { c: p.code })].filter(Boolean).join(' · ')}</div>
                       </div>
-                      <span className="secondary nowrap tnum" style={{ fontSize: 12.5 }}>Qoldiq: {p.stock}</span>
+                      <span className="secondary nowrap tnum" style={{ fontSize: 12.5 }}>{t('Qoldiq')}: {p.stock}</span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
-            <button type="button" className="btn btn-secondary" onClick={() => setCreating(true)}><Plus size={16} />Yangi mahsulot</button>
+            <button type="button" className="btn btn-secondary" onClick={() => setCreating(true)}><Plus size={16} />{t('Yangi mahsulot')}</button>
           </div>
 
           {lines.length === 0 ? (
             <div className="table-wrap">
-              <EmptyState icon={PackagePlus} title="Ro'yxat bo'sh" text="Yuqoridagi qidiruvdan kelgan mahsulotlarni qo'shing. Ro'yxatda yo'q mahsulotni darhol yaratish mumkin." />
+              <EmptyState icon={PackagePlus} title={t("Ro'yxat bo'sh")} text={t("Yuqoridagi qidiruvdan kelgan mahsulotlarni qo'shing. Ro'yxatda yo'q mahsulotni darhol yaratish mumkin.")} />
             </div>
           ) : (
             <div className="table-wrap">
               <table className="table table-sm">
                 <thead>
                   <tr>
-                    <th>Mahsulot</th>
-                    <th style={{ width: 110 }}>Miqdor</th>
-                    <th style={{ width: 170 }}>Tannarx (dona)</th>
-                    <th style={{ width: 170 }}>Sotuv narxi</th>
-                    <th style={{ width: 160 }}>Yaroqlilik muddati</th>
-                    <th className="num">Summa</th>
+                    <th>{t('Mahsulot')}</th>
+                    <th style={{ width: 100 }}>{t('Miqdor')}</th>
+                    <th style={{ width: 160 }}>{t('Tannarx (dona)')}</th>
+                    <th style={{ width: 160 }}>{t('Sotuv narxi')}</th>
+                    <th style={{ width: 160 }}>{t('Yaroqlilik muddati')}</th>
+                    <th className="num">{t('Summa')}</th>
                     <th className="actions" />
                   </tr>
                 </thead>
@@ -148,17 +149,17 @@ function ReceiptForm({ products, categories, brands, defaultMinStock, onClose, o
                     <tr key={l.product_id}>
                       <td>
                         <div className="cell-title">{l.name}</div>
-                        <div className="cell-sub">{[l.meta, `Hozir: ${l.stock} ${l.unit}`].filter(Boolean).join(' · ')}</div>
+                        <div className="cell-sub">{[l.meta, t('Hozir: {n} {u}', { n: l.stock, u: unitLabel(l.unit) })].filter(Boolean).join(' · ')}</div>
                       </td>
                       <td><input className="input input-sm tnum" type="number" min="1" value={l.quantity} onChange={(e) => update(i, 'quantity', e.target.value)} placeholder="0" autoFocus={i === lines.length - 1} /></td>
                       <td><MoneyInput value={l.cost_price} onChange={(v) => update(i, 'cost_price', v)} /></td>
                       <td>
                         <MoneyInput value={l.sell_price} onChange={(v) => update(i, 'sell_price', v)} />
-                        {Number(l.sell_price) !== Number(l.old_sell) && <div className="cell-sub text-warning">avval {money(l.old_sell)}</div>}
+                        {Number(l.sell_price) !== Number(l.old_sell) && <div className="cell-sub text-warning">{t('avval {s}', { s: money(l.old_sell) })}</div>}
                       </td>
                       <td><input className="input input-sm" type="date" min={isoDate()} value={l.expiry_date} onChange={(e) => update(i, 'expiry_date', e.target.value)} /></td>
                       <td className="num strong">{money((Number(l.quantity) || 0) * (Number(l.cost_price) || 0))}</td>
-                      <td className="actions"><button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={() => removeLine(i)} aria-label="O'chirish"><Trash2 size={15} /></button></td>
+                      <td className="actions"><button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={() => removeLine(i)} aria-label={t("O'chirish")}><Trash2 size={15} /></button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -167,8 +168,8 @@ function ReceiptForm({ products, categories, brands, defaultMinStock, onClose, o
           )}
 
           <div className="field" style={{ maxWidth: 560 }}>
-            <label>Izoh</label>
-            <input className="input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Masalan: qayerdan olindi, faktura raqami" />
+            <label>{t('Izoh')}</label>
+            <input className="input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t('Masalan: qayerdan olindi, faktura raqami')} />
           </div>
         </div>
       </Modal>
@@ -200,16 +201,16 @@ function ReceiptView({ receiptId, onClose, onChanged }) {
 
   async function cancel() {
     const ok = await confirm({
-      title: 'Kirimni bekor qilish',
-      message: `${receipt.receipt_number} kirimidagi ${receipt.total_items} dona ombordan ayiriladi. Xato kiritilgan kirim uchun ishlating.`,
-      confirmText: 'Bekor qilish',
-      cancelText: 'Orqaga',
+      title: t('Kirimni bekor qilish'),
+      message: t('{n} kirimidagi {q} dona ombordan ayiriladi. Xato kiritilgan kirim uchun ishlating.', { n: receipt.receipt_number, q: receipt.total_items }),
+      confirmText: t('Bekor qilish'),
+      cancelText: t('Orqaga'),
       danger: true,
     });
     if (!ok) return;
     try {
       await window.api.stock.cancelReceipt(receipt.id, {});
-      toast.success('Kirim bekor qilindi');
+      toast.success(t('Kirim bekor qilindi'));
       load();
       onChanged();
     } catch (err) {
@@ -218,32 +219,32 @@ function ReceiptView({ receiptId, onClose, onChanged }) {
   }
 
   return (
-    <Modal size="lg" title={`Kirim ${receipt.receipt_number}`} subtitle={fmtDateTime(receipt.created_at)} onClose={onClose}
+    <Modal size="lg" title={t('Kirim {n}', { n: receipt.receipt_number })} subtitle={fmtDateTime(receipt.created_at)} onClose={onClose}
       footer={(
         <>
           {!cancelled && (
             <button type="button" className="btn btn-danger-outline left" onClick={cancel} disabled={!receipt.can_cancel}
-              title={receipt.can_cancel ? undefined : `Bu kirimdan ${receipt.used_qty} dona sotilgan yoki chiqarilgan`}>
-              <Ban size={16} />Kirimni bekor qilish
+              title={receipt.can_cancel ? undefined : t('Bu kirimdan {n} dona sotilgan yoki chiqarilgan', { n: receipt.used_qty })}>
+              <Ban size={16} />{t('Kirimni bekor qilish')}
             </button>
           )}
-          <button type="button" className="btn btn-secondary" onClick={onClose}>Yopish</button>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>{t('Yopish')}</button>
         </>
       )}>
       <div className="stack">
-        {cancelled && <div className="callout callout-danger"><span>Bu kirim {fmtDateTime(receipt.cancelled_at)} da bekor qilingan.</span></div>}
+        {cancelled && <div className="callout callout-danger"><span>{t('Bu kirim {d} da bekor qilingan.', { d: fmtDateTime(receipt.cancelled_at) })}</span></div>}
         {!cancelled && !receipt.can_cancel && (
-          <div className="callout callout-info"><span>Bu kirimdan {receipt.used_qty} dona sotilgan yoki chiqarilgan, shuning uchun uni bekor qilib bo'lmaydi. Qoldiqni mahsulotning "Ombor holati" oynasidan tuzating.</span></div>
+          <div className="callout callout-info"><span>{t("Bu kirimdan {n} dona sotilgan yoki chiqarilgan, shuning uchun uni bekor qilib bo'lmaydi. Qoldiqni mahsulotning \"Ombor holati\" oynasidan tuzating.", { n: receipt.used_qty })}</span></div>
         )}
         {receipt.notes && <div className="callout callout-info"><span>{receipt.notes}</span></div>}
         <div className="table-wrap">
           <table className="table table-sm">
-            <thead><tr><th>Mahsulot</th><th className="num">Miqdor</th><th className="num">Tannarx</th><th>Yaroqlilik</th><th className="num">Summa</th></tr></thead>
+            <thead><tr><th>{t('Mahsulot')}</th><th className="num">{t('Miqdor')}</th><th className="num">{t('Tannarx')}</th><th>{t('Yaroqlilik')}</th><th className="num">{t('Summa')}</th></tr></thead>
             <tbody>
               {receipt.items.map((it) => (
                 <tr key={it.id}>
-                  <td><div className="cell-title">{it.product_name}</div><div className="cell-sub">{productMeta(it) || `Kod ${it.code}`}</div></td>
-                  <td className="num">{it.quantity} {it.unit}</td>
+                  <td><div className="cell-title">{it.product_name}</div><div className="cell-sub">{productMeta(it) || t('Kod {c}', { c: it.code })}</div></td>
+                  <td className="num">{it.quantity} {unitLabel(it.unit)}</td>
                   <td className="num">{money(it.cost_price)}</td>
                   <td>{it.expiry_date ? fmtDate(it.expiry_date) : <span className="muted">—</span>}</td>
                   <td className="num strong">{money(it.quantity * it.cost_price)}</td>
@@ -251,7 +252,7 @@ function ReceiptView({ receiptId, onClose, onChanged }) {
               ))}
             </tbody>
             <tfoot>
-              <tr><td>Jami</td><td className="num">{receipt.total_items}</td><td /><td /><td className="num">{som(receipt.total_amount)}</td></tr>
+              <tr><td>{t('Jami')}</td><td className="num">{receipt.total_items}</td><td /><td /><td className="num">{som(receipt.total_amount)}</td></tr>
             </tfoot>
           </table>
         </div>
@@ -293,9 +294,9 @@ export default function StockReceive({ refreshAlerts, settings }) {
   return (
     <>
       <PageHeader
-        title="Kirim"
-        subtitle="Omborga kelgan mahsulotlarni qabul qilish"
-        actions={<button type="button" className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={16} />Yangi kirim</button>}
+        title={t('Kirim')}
+        subtitle={t('Omborga kelgan mahsulotlarni qabul qilish')}
+        actions={<button type="button" className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={16} />{t('Yangi kirim')}</button>}
       />
       <div className="content">
         <div className="toolbar">
@@ -303,10 +304,10 @@ export default function StockReceive({ refreshAlerts, settings }) {
         </div>
         <div className="table-wrap">
           {receipts.length === 0 ? (
-            <EmptyState icon={PackagePlus} title="Bu davrda kirim yo'q" text="Mahsulot kelganda 'Yangi kirim' orqali qabul qiling" />
+            <EmptyState icon={PackagePlus} title={t("Bu davrda kirim yo'q")} text={t("Mahsulot kelganda 'Yangi kirim' orqali qabul qiling")} />
           ) : (
             <table className="table">
-              <thead><tr><th>Raqam</th><th>Sana</th><th>Izoh</th><th className="num">Pozitsiya</th><th className="num">Miqdor</th><th className="num">Summa</th><th>Holat</th></tr></thead>
+              <thead><tr><th>{t('Raqam')}</th><th>{t('Sana')}</th><th>{t('Izoh')}</th><th className="num">{t('Pozitsiya')}</th><th className="num">{t('Miqdor')}</th><th className="num">{t('Summa')}</th><th>{t('Holat')}</th></tr></thead>
               <tbody>
                 {receipts.map((r) => (
                   <tr key={r.id} className={`clickable${r.status === 'cancelled' ? ' dim' : ''}`} onClick={() => setViewId(r.id)}>
@@ -316,11 +317,11 @@ export default function StockReceive({ refreshAlerts, settings }) {
                     <td className="num">{r.lines_count}</td>
                     <td className="num">{r.total_items}</td>
                     <td className="num strong">{money(r.total_amount)}</td>
-                    <td>{r.status === 'cancelled' ? <Pill tone="danger">Bekor qilingan</Pill> : <Pill tone="success">Qabul qilingan</Pill>}</td>
+                    <td>{r.status === 'cancelled' ? <Pill tone="danger">{t('Bekor qilingan')}</Pill> : <Pill tone="success">{t('Qabul qilingan')}</Pill>}</td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot><tr><td colSpan={5}>Jami {receipts.filter((r) => r.status !== 'cancelled').length} ta kirim</td><td className="num">{som(total)}</td><td /></tr></tfoot>
+              <tfoot><tr><td colSpan={5}>{t('Jami {n} ta kirim', { n: receipts.filter((r) => r.status !== 'cancelled').length })}</td><td className="num">{som(total)}</td><td /></tr></tfoot>
             </table>
           )}
         </div>
