@@ -7,14 +7,15 @@ import {
 import { EmptyState, PageHeader, ProductThumb, StatCard } from '../components/ui';
 import { chartColors, useTheme } from '../lib/theme';
 import SaleDetail from '../components/SaleDetail';
-import { compactMoney, fmtTime, longDate, money, productMeta, shortDay, som } from '../lib/format';
+import { compactMoney, currency, fmtTime, longDate, money, productMeta, shortDay, som } from '../lib/format';
+import { t } from '../lib/i18n';
 
 function ChartTooltip({ active, payload }) {
   if (!active || !payload || !payload.length) return null;
   const p = payload[0].payload;
   return (
     <div className="chart-tooltip">
-      <div className="t">{shortDay(p.date)} · {p.count} ta chek</div>
+      <div className="t">{shortDay(p.date)} · {t('{n} ta chek', { n: p.count })}</div>
       <div className="v">{som(p.revenue)}</div>
     </div>
   );
@@ -38,32 +39,55 @@ export default function Dashboard({ navigate }) {
 
   const header = (
     <PageHeader
-      title="Bosh panel"
+      title={t('Bosh panel')}
       subtitle={longDate()}
-      actions={<button type="button" className="btn btn-primary" onClick={() => navigate('pos')}><ShoppingCart size={16} />Yangi sotuv</button>}
+      actions={<button type="button" className="btn btn-primary" onClick={() => navigate('pos')}><ShoppingCart size={16} />{t('Yangi sotuv')}</button>}
     />
   );
 
-  if (!stats) return <>{header}<div className="content"><div className="loading">Yuklanmoqda…</div></div></>;
+  if (!stats) return <>{header}<div className="content"><div className="loading">{t('Yuklanmoqda…')}</div></div></>;
 
   const { today, month, inventory, customers } = stats;
   const margin = today.revenue > 0 ? Math.round((today.profit / today.revenue) * 100) : 0;
   const chartData = stats.daily.map((d) => ({ ...d, label: shortDay(d.date) }));
   const alertsTotal = inventory.low_stock + inventory.expiring + inventory.expired;
+  const cur = currency();
+  const cash = stats.cashToday;
 
   return (
     <>
       {header}
       <div className="content">
         <div className="stat-grid">
-          <StatCard label="Bugungi savdo" value={money(today.revenue)} unit="so'm" hint={`${today.count} ta chek`} icon={TrendingUp} tone="primary" />
-          <StatCard label="Bugungi foyda" value={money(today.profit)} unit="so'm" hint={today.revenue ? `Marja ${margin}%` : 'Sotuv hali yo\'q'} icon={Wallet} tone="success" />
-          <StatCard label="Bugungi kassa tushumi" value={money(stats.cashToday)} unit="so'm" hint="Naqd, karta, Click, Payme va mijoz to'lovlari" icon={Banknote} />
           <StatCard
-            label="Mijozlar qarzi"
+            label={t('Bugungi savdo')}
+            value={money(today.revenue)}
+            unit={cur}
+            hint={today.debt > 0 ? t('{n} ta chek · shundan qarzga {d}', { n: today.count, d: som(today.debt) }) : t('{n} ta chek', { n: today.count })}
+            icon={TrendingUp}
+            tone="primary"
+          />
+          <StatCard label={t('Bugungi foyda')} value={money(today.profit)} unit={cur} hint={today.revenue ? t('Marja {p}%', { p: margin }) : t("Sotuv hali yo'q")} icon={Wallet} tone="success" />
+          <StatCard
+            label={t('Bugun kassaga tushgan pul')}
+            value={money(cash.total)}
+            unit={cur}
+            icon={Banknote}
+            title={t("Naqd, karta, Click va Payme orqali haqiqatda olingan pul. Qarzga sotilgan summa kirmaydi, mijoz qoldirgan avans esa kiradi.")}
+          >
+            <div className="stat-breakdown">
+              <div className="line"><span>{t('Sotuvlardan')}</span><b>{money(cash.sales)}</b></div>
+              {(cash.deposits !== 0 || cash.withdrawals !== 0) && (
+                <div className="line"><span>{t("Mijozlar to'lovi (avans, qarz)")}</span><b>{money(cash.deposits + cash.withdrawals)}</b></div>
+              )}
+              {cash.refunds !== 0 && <div className="line"><span>{t('Qaytarilgan')}</span><b>{money(cash.refunds)}</b></div>}
+            </div>
+          </StatCard>
+          <StatCard
+            label={t('Mijozlar qarzi')}
             value={money(customers.total_debt)}
-            unit="so'm"
-            hint={customers.debtors ? `${customers.debtors} ta qarzdor mijoz` : "Qarzdor mijoz yo'q"}
+            unit={cur}
+            hint={customers.debtors ? t('{n} ta qarzdor mijoz', { n: customers.debtors }) : t("Qarzdor mijoz yo'q")}
             icon={HandCoins}
             tone={customers.total_debt > 0 ? 'danger' : 'neutral'}
             onClick={() => navigate('customers')}
@@ -74,11 +98,11 @@ export default function Dashboard({ navigate }) {
           <div className="card">
             <div className="card-header">
               <div>
-                <div className="card-title">Savdo dinamikasi</div>
-                <div className="card-subtitle">So'nggi 14 kun</div>
+                <div className="card-title">{t('Savdo dinamikasi')}</div>
+                <div className="card-subtitle">{t("So'nggi 14 kun")}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div className="card-subtitle">Shu oy savdosi</div>
+                <div className="card-subtitle">{t('Shu oy savdosi')}</div>
                 <div className="strong tnum" style={{ fontSize: 16 }}>{som(month.revenue)}</div>
               </div>
             </div>
@@ -104,42 +128,42 @@ export default function Dashboard({ navigate }) {
           <div className="card">
             <div className="card-header">
               <div>
-                <div className="card-title">Ombor holati</div>
-                <div className="card-subtitle">{inventory.products} ta faol mahsulot</div>
+                <div className="card-title">{t('Ombor holati')}</div>
+                <div className="card-subtitle">{t('{n} ta faol mahsulot', { n: inventory.products })}</div>
               </div>
             </div>
             <div className="kv-list">
-              <div className="kv"><span className="kv-label"><Boxes size={16} />Ombor qiymati (tannarx)</span><span className="kv-value">{som(inventory.stock_value)}</span></div>
-              <div className="kv"><span className="kv-label"><Package size={16} />Sotuv narxida</span><span className="kv-value">{som(inventory.retail_value)}</span></div>
-              <div className="kv"><span className="kv-label"><Wallet size={16} />Mijozlardagi avans</span><span className="kv-value">{som(customers.total_advance)}</span></div>
+              <div className="kv"><span className="kv-label"><Boxes size={16} />{t('Ombor qiymati (tannarx)')}</span><span className="kv-value">{som(inventory.stock_value)}</span></div>
+              <div className="kv"><span className="kv-label"><Package size={16} />{t('Sotuv narxida')}</span><span className="kv-value">{som(inventory.retail_value)}</span></div>
+              <div className="kv"><span className="kv-label"><Wallet size={16} />{t('Mijozlardagi avans')}</span><span className="kv-value">{som(customers.total_advance)}</span></div>
               <div className="kv link" onClick={() => navigate('alerts')}>
-                <span className="kv-label"><AlertTriangle size={16} />Kam qolgan / tugagan</span>
-                <span className={`kv-value ${inventory.low_stock ? 'text-warning' : ''}`}>{inventory.low_stock} ta <ChevronRight size={14} className="muted" /></span>
+                <span className="kv-label"><AlertTriangle size={16} />{t('Kam qolgan / tugagan')}</span>
+                <span className={`kv-value ${inventory.low_stock ? 'text-warning' : ''}`}>{t('{n} ta', { n: inventory.low_stock })} <ChevronRight size={14} className="muted" /></span>
               </div>
               <div className="kv link" onClick={() => navigate('alerts')}>
-                <span className="kv-label"><CalendarClock size={16} />Muddati yaqin / o'tgan</span>
+                <span className="kv-label"><CalendarClock size={16} />{t("Muddati yaqin / o'tgan")}</span>
                 <span className={`kv-value ${inventory.expired ? 'text-danger' : inventory.expiring ? 'text-warning' : ''}`}>
                   {inventory.expiring} / {inventory.expired} <ChevronRight size={14} className="muted" />
                 </span>
               </div>
               <div className="kv">
-                <span className="kv-label"><PackageMinus size={16} />Shu oy hisobdan chiqarilgan</span>
+                <span className="kv-label"><PackageMinus size={16} />{t('Shu oy hisobdan chiqarilgan')}</span>
                 <span className={`kv-value ${inventory.month_loss ? 'text-danger' : ''}`}>{som(inventory.month_loss)}</span>
               </div>
             </div>
-            {alertsTotal === 0 && <div className="card-body muted" style={{ fontSize: 12.5, paddingTop: 0 }}>Ombor bo'yicha ogohlantirish yo'q.</div>}
+            {alertsTotal === 0 && <div className="card-body muted" style={{ fontSize: 12.5, paddingTop: 0 }}>{t("Ombor bo'yicha ogohlantirish yo'q.")}</div>}
           </div>
         </div>
 
         <div className="dash-grid even">
           <div className="card">
-            <div className="card-header"><div><div className="card-title">Eng ko'p sotilganlar</div><div className="card-subtitle">Shu oy, savdo summasi bo'yicha</div></div></div>
+            <div className="card-header"><div><div className="card-title">{t("Eng ko'p sotilganlar")}</div><div className="card-subtitle">{t("Shu oy, savdo summasi bo'yicha")}</div></div></div>
             {stats.topProducts.length === 0 ? (
-              <EmptyState icon={Package} title="Shu oy hali sotuv yo'q" />
+              <EmptyState icon={Package} title={t("Shu oy hali sotuv yo'q")} />
             ) : (
               <div className="table-wrap">
                 <table className="table table-sm">
-                  <thead><tr><th>Mahsulot</th><th className="num">Sotildi</th><th className="num">Savdo</th></tr></thead>
+                  <thead><tr><th>{t('Mahsulot')}</th><th className="num">{t('Sotildi')}</th><th className="num">{t('Savdo')}</th></tr></thead>
                   <tbody>
                     {stats.topProducts.map((p) => (
                       <tr key={p.id}>
@@ -161,22 +185,22 @@ export default function Dashboard({ navigate }) {
 
           <div className="card">
             <div className="card-header">
-              <div><div className="card-title">So'nggi sotuvlar</div><div className="card-subtitle">Chekni ochish uchun bosing</div></div>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate('sales')}>Barchasi<ChevronRight size={14} /></button>
+              <div><div className="card-title">{t("So'nggi sotuvlar")}</div><div className="card-subtitle">{t('Chekni ochish uchun bosing')}</div></div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate('sales')}>{t('Barchasi')}<ChevronRight size={14} /></button>
             </div>
             {stats.recentSales.length === 0 ? (
-              <EmptyState icon={Receipt} title="Hali sotuv yo'q" />
+              <EmptyState icon={Receipt} title={t("Hali sotuv yo'q")} />
             ) : (
               <div className="table-wrap">
                 <table className="table table-sm">
-                  <thead><tr><th>Chek</th><th>Vaqt</th><th>Mijoz</th><th className="num">Summa</th></tr></thead>
+                  <thead><tr><th>{t('Chek')}</th><th>{t('Vaqt')}</th><th>{t('Mijoz')}</th><th className="num">{t('Summa')}</th></tr></thead>
                   <tbody>
                     {stats.recentSales.map((s) => (
                       <tr key={s.id} className="clickable" onClick={() => setSaleId(s.id)}>
                         <td className="mono">{s.sale_number}</td>
                         <td className="secondary">{fmtTime(s.created_at)}</td>
-                        <td>{s.customer_name || <span className="muted">Mijozsiz</span>}</td>
-                        <td className="num strong">{money(s.final_total - s.returned_amount)}{s.debt_amount > 0 && <div className="cell-sub text-danger">qarz {money(s.debt_amount)}</div>}</td>
+                        <td>{s.customer_name || <span className="muted">{t('Mijozsiz')}</span>}</td>
+                        <td className="num strong">{money(s.final_total - s.returned_amount)}{s.debt_amount > 0 && <div className="cell-sub text-danger">{t('qarz {a}', { a: money(s.debt_amount) })}</div>}</td>
                       </tr>
                     ))}
                   </tbody>

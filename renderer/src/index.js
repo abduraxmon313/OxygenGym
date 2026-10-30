@@ -7,9 +7,11 @@ import '@fontsource/inter/700.css';
 import './styles/global.css';
 import App from './App';
 import { applyTheme, initialTheme } from './lib/theme';
+import { initialLanguage, setLanguage } from './lib/i18n';
 
 // Birinchi chizishdan oldin rejimni qo'yamiz — oq/qora "miltillash" bo'lmasin
 applyTheme(initialTheme());
+setLanguage(initialLanguage());
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 

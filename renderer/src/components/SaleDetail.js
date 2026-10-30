@@ -3,7 +3,8 @@ import { toast } from 'react-hot-toast';
 import { RotateCcw } from 'lucide-react';
 import Modal from './Modal';
 import { Pill, ProductThumb } from './ui';
-import { PAYMENT_LABELS, fmtDateTime, money, productMeta, som } from '../lib/format';
+import { fmtDateTime, money, paymentLabel, productMeta, som, unitLabel } from '../lib/format';
+import { t } from '../lib/i18n';
 
 function ReturnModal({ sale, onClose, onDone }) {
   const returnable = sale.items.filter((it) => it.quantity - it.returned_qty > 0);
@@ -29,7 +30,7 @@ function ReturnModal({ sale, onClose, onDone }) {
   }
 
   async function submit() {
-    if (!selected.length) return toast.error('Qaytariladigan miqdorni kiriting');
+    if (!selected.length) return toast.error(t('Qaytariladigan miqdorni kiriting'));
     setBusy(true);
     try {
       const res = await window.api.sales.returnItems(sale.id, {
@@ -37,7 +38,7 @@ function ReturnModal({ sale, onClose, onDone }) {
         to_balance: toBalance,
         note,
       });
-      toast.success(res.refund_cash > 0 ? `Qaytarildi. Mijozga ${som(res.refund_cash)} naqd bering` : `Qaytarildi · ${som(res.amount)} mijoz hisobiga`, { duration: 8000 });
+      toast.success(res.refund_cash > 0 ? t('Qaytarildi. Mijozga {s} naqd bering', { s: som(res.refund_cash) }) : t('Qaytarildi · {s} mijoz hisobiga', { s: som(res.amount) }), { duration: 8000 });
       onDone();
     } catch (err) {
       toast.error(err.message);
@@ -48,21 +49,21 @@ function ReturnModal({ sale, onClose, onDone }) {
   return (
     <Modal
       size="md"
-      title="Mahsulotni qaytarish"
-      subtitle={`Chek ${sale.sale_number} · mahsulot omborga qaytadi`}
+      title={t('Mahsulotni qaytarish')}
+      subtitle={t('Chek {n} · mahsulot omborga qaytadi', { n: sale.sale_number })}
       onClose={onClose}
       footer={(
         <>
-          <button type="button" className="btn btn-ghost left" onClick={() => setAll(!allSelected)}>{allSelected ? 'Tozalash' : 'Hammasini tanlash'}</button>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>Bekor qilish</button>
-          <button type="button" className="btn btn-danger" onClick={submit} disabled={busy || !selected.length}>Qaytarishni tasdiqlash</button>
+          <button type="button" className="btn btn-ghost left" onClick={() => setAll(!allSelected)}>{allSelected ? t('Tozalash') : t('Hammasini tanlash')}</button>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>{t('Bekor qilish')}</button>
+          <button type="button" className="btn btn-danger" onClick={submit} disabled={busy || !selected.length}>{t('Qaytarishni tasdiqlash')}</button>
         </>
       )}
     >
       <div className="stack">
         <div className="table-wrap">
           <table className="table table-sm">
-            <thead><tr><th>Mahsulot</th><th className="num">Sotilgan</th><th className="num">Qaytarish mumkin</th><th className="num">Qaytariladi</th></tr></thead>
+            <thead><tr><th>{t('Mahsulot')}</th><th className="num">{t('Sotilgan')}</th><th className="num">{t('Qaytarish mumkin')}</th><th className="num">{t('Qaytariladi')}</th></tr></thead>
             <tbody>
               {returnable.map((it) => {
                 const max = it.quantity - it.returned_qty;
@@ -89,22 +90,22 @@ function ReturnModal({ sale, onClose, onDone }) {
         </div>
 
         <div className="pay-box summary">
-          <div className="summary-row"><span>Qaytariladigan summa{sale.ratio < 1 ? ' (chegirma hisobga olingan)' : ''}</span><strong>{som(amount)}</strong></div>
-          {toAccount > 0 && <div className="summary-row"><span>Mijoz hisobiga (qarz/avansdan olingan qism)</span><strong>{som(toAccount)}</strong></div>}
+          <div className="summary-row"><span>{sale.ratio < 1 ? t('Qaytariladigan summa (chegirma hisobga olingan)') : t('Qaytariladigan summa')}</span><strong>{som(amount)}</strong></div>
+          {toAccount > 0 && <div className="summary-row"><span>{t('Mijoz hisobiga (qarz/avansdan olingan qism)')}</span><strong>{som(toAccount)}</strong></div>}
           {cash > 0 && (
-            <div className="summary-row total"><span>{toBalance ? 'Mijoz hisobiga yoziladi' : 'Naqd beriladi'}</span><strong className={toBalance ? '' : 'text-danger'}>{som(cash)}</strong></div>
+            <div className="summary-row total"><span>{toBalance ? t('Mijoz hisobiga yoziladi') : t('Naqd beriladi')}</span><strong className={toBalance ? '' : 'text-danger'}>{som(cash)}</strong></div>
           )}
         </div>
 
         {sale.customer_id && cash > 0 && (
           <label className="checkbox">
             <input type="checkbox" checked={toBalance} onChange={(e) => setToBalance(e.target.checked)} />
-            {som(cash)} ni naqd bermasdan mijoz hisobiga yozish
+            {t('{s} ni naqd bermasdan mijoz hisobiga yozish', { s: som(cash) })}
           </label>
         )}
         <div className="field">
-          <label>Sabab / izoh</label>
-          <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Masalan: ta'mi yoqmadi, yopiq holatda qaytardi" />
+          <label>{t('Sabab / izoh')}</label>
+          <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("Masalan: ta'mi yoqmadi, yopiq holatda qaytardi")} />
         </div>
       </div>
     </Modal>
@@ -129,47 +130,47 @@ export default function SaleDetail({ saleId, onClose, onChanged }) {
     <>
       <Modal
         size="lg"
-        title={`Chek ${sale.sale_number}`}
+        title={t('Chek {n}', { n: sale.sale_number })}
         subtitle={fmtDateTime(sale.created_at)}
         onClose={onClose}
         footer={(
           <>
             {completed && (
               <button type="button" className="btn btn-danger-outline left" onClick={() => setReturning(true)}>
-                <RotateCcw size={16} />Qaytarish
+                <RotateCcw size={16} />{t('Qaytarish')}
               </button>
             )}
-            <button type="button" className="btn btn-secondary" onClick={onClose}>Yopish</button>
+            <button type="button" className="btn btn-secondary" onClick={onClose}>{t('Yopish')}</button>
           </>
         )}
       >
         <div className="stack">
           <dl className="dl">
             <div>
-              <dt>Holat</dt>
-              <dd>{!completed ? <Pill tone="danger">To'liq qaytarilgan</Pill> : partly ? <Pill tone="warning">Qisman qaytarilgan</Pill> : <Pill tone="success">Yakunlangan</Pill>}</dd>
+              <dt>{t('Holat')}</dt>
+              <dd>{!completed ? <Pill tone="danger">{t("To'liq qaytarilgan")}</Pill> : partly ? <Pill tone="warning">{t('Qisman qaytarilgan')}</Pill> : <Pill tone="success">{t('Yakunlangan')}</Pill>}</dd>
             </div>
-            <div><dt>Mijoz</dt><dd>{sale.customer_name || <span className="muted">Mijozsiz</span>}</dd></div>
-            <div><dt>Telefon</dt><dd>{sale.customer_phone || '—'}</dd></div>
-            <div><dt>Pozitsiyalar</dt><dd>{sale.items.length} xil</dd></div>
+            <div><dt>{t('Mijoz')}</dt><dd>{sale.customer_name || <span className="muted">{t('Mijozsiz')}</span>}</dd></div>
+            <div><dt>{t('Telefon')}</dt><dd>{sale.customer_phone || '—'}</dd></div>
+            <div><dt>{t('Pozitsiyalar')}</dt><dd>{t('{n} xil', { n: sale.items.length })}</dd></div>
           </dl>
 
           <div className="table-wrap">
             <table className="table table-sm">
-              <thead><tr><th>Mahsulot</th><th className="num">Narx</th><th className="num">Miqdor</th><th className="num">Summa</th></tr></thead>
+              <thead><tr><th>{t('Mahsulot')}</th><th className="num">{t('Narx')}</th><th className="num">{t('Miqdor')}</th><th className="num">{t('Summa')}</th></tr></thead>
               <tbody>
                 {sale.items.map((it) => (
                   <tr key={`${it.product_id}-${it.price}`}>
                     <td>
                       <div className="cell-product">
                         <ProductThumb product={it} size="sm" />
-                        <div><div className="cell-title">{it.product_name}</div><div className="cell-sub">{productMeta(it) || `Kod ${it.code}`}</div></div>
+                        <div><div className="cell-title">{it.product_name}</div><div className="cell-sub">{productMeta(it) || t('Kod {c}', { c: it.code })}</div></div>
                       </div>
                     </td>
                     <td className="num">{money(it.price)}</td>
                     <td className="num">
-                      {it.quantity} {it.unit}
-                      {it.returned_qty > 0 && <div className="cell-sub text-danger">qaytarilgan {it.returned_qty}</div>}
+                      {it.quantity} {unitLabel(it.unit)}
+                      {it.returned_qty > 0 && <div className="cell-sub text-danger">{t('qaytarilgan {n}', { n: it.returned_qty })}</div>}
                     </td>
                     <td className="num strong">{money(it.total)}</td>
                   </tr>
@@ -180,37 +181,37 @@ export default function SaleDetail({ saleId, onClose, onChanged }) {
 
           <div className="grid-2">
             <div className="pay-box summary">
-              <div className="summary-row"><span>Jami</span><strong>{som(sale.total)}</strong></div>
+              <div className="summary-row"><span>{t('Jami')}</span><strong>{som(sale.total)}</strong></div>
               {discountAmount > 0 && (
-                <div className="summary-row"><span>Chegirma{sale.discount_type === 'percent' ? ` (${sale.discount}%)` : ''}</span><strong className="text-danger">−{som(discountAmount)}</strong></div>
+                <div className="summary-row"><span>{t('Chegirma')}{sale.discount_type === 'percent' ? ` (${sale.discount}%)` : ''}</span><strong className="text-danger">−{som(discountAmount)}</strong></div>
               )}
-              <div className="summary-row total"><span>To'langan</span><strong>{som(sale.final_total)}</strong></div>
+              <div className="summary-row total"><span>{t("To'langan")}</span><strong>{som(sale.final_total)}</strong></div>
               {sale.returned_amount > 0 && (
                 <>
-                  <div className="summary-row"><span>Qaytarilgan</span><strong className="text-danger">−{som(sale.returned_amount)}</strong></div>
-                  <div className="summary-row"><span>Sof savdo</span><strong>{som(sale.final_total - sale.returned_amount)}</strong></div>
+                  <div className="summary-row"><span>{t('Qaytarilgan')}</span><strong className="text-danger">−{som(sale.returned_amount)}</strong></div>
+                  <div className="summary-row"><span>{t('Sof savdo')}</span><strong>{som(sale.final_total - sale.returned_amount)}</strong></div>
                 </>
               )}
             </div>
             <div className="pay-box summary">
               {sale.payments.map((p) => (
                 <div key={p.method} className="summary-row">
-                  <span>{PAYMENT_LABELS[p.method] || p.method}</span>
+                  <span>{paymentLabel(p.method)}</span>
                   <strong className={p.method === 'debt' ? 'text-danger' : undefined}>{som(p.amount)}</strong>
                 </div>
               ))}
               {sale.change_amount > 0 && (
-                <div className="summary-row"><span>{sale.change_to_balance > 0 ? 'Qaytim (hisobga yozildi)' : 'Qaytim berildi'}</span><strong>{som(sale.change_amount)}</strong></div>
+                <div className="summary-row"><span>{sale.change_to_balance > 0 ? t('Qaytim (hisobga yozildi)') : t('Qaytim berildi')}</span><strong>{som(sale.change_amount)}</strong></div>
               )}
             </div>
           </div>
 
           {sale.returns.length > 0 && (
             <div>
-              <div className="form-section-title">Qaytarishlar</div>
+              <div className="form-section-title">{t('Qaytarishlar')}</div>
               <div className="table-wrap">
                 <table className="table table-sm">
-                  <thead><tr><th>Raqam</th><th>Sana</th><th>Izoh</th><th className="num">Summa</th><th className="num">Hisobga</th><th className="num">Naqd berildi</th></tr></thead>
+                  <thead><tr><th>{t('Raqam')}</th><th>{t('Sana')}</th><th>{t('Izoh')}</th><th className="num">{t('Summa')}</th><th className="num">{t('Hisobga')}</th><th className="num">{t('Naqd berildi')}</th></tr></thead>
                   <tbody>
                     {sale.returns.map((r) => (
                       <tr key={r.id}>

@@ -13,7 +13,7 @@ Keyingi versiyalar dastur ichidan yangilanadi. Yangi versiya chiqqanda o'ng yuqo
 
 | Bo'lim | Vazifasi |
 |---|---|
-| Bosh panel | Bugungi savdo, foyda, kassa tushumi, mijozlar qarzi, 14 kunlik grafik |
+| Bosh panel | Bugungi savdo, foyda, kassaga tushgan pul (sotuvlardan / mijozlar to'lovidan), mijozlar qarzi, 14 kunlik grafik |
 | Sotuv | Kategoriya va qidiruv bo'yicha tez sotuv, chegirma, mijoz tanlash |
 | Mahsulotlar | Qo'lda kiritish: nom, kod, kategoriya, brend, hajm, ta'm, narx. Har bir ta'm/hajm alohida mahsulot |
 | Kirim | Kelgan mahsulot: miqdor, tannarx, sotuv narxi, yaroqlilik muddati |
@@ -22,7 +22,7 @@ Keyingi versiyalar dastur ichidan yangilanadi. Yangi versiya chiqqanda o'ng yuqo
 | Mijozlar | Mijoz hisobi: avans, qarz, to'lovlar tarixi |
 | Hisobotlar | Kunlik savdo, mahsulotlar, kategoriyalar, kassa |
 | Harakatlar jurnali | Har bir muhim amal qayd qilinadi |
-| Sozlamalar | Do'kon, qarz qoidasi, ogohlantirishlar, zaxira nusxa, yangilanish |
+| Sozlamalar | Do'kon, qarz qoidasi, ogohlantirishlar, til (UZ/RU/EN), kunduzgi/tungi rejim, yangilanish |
 
 ## Mijoz hisobi qanday ishlaydi
 
@@ -53,12 +53,17 @@ Logoni `assets/brand/` papkasiga bitta rasm (PNG, JPG yoki WEBP) qilib joylang. 
 - **Arxiv:** mahsulot va mijozlar o'chirilmaydi, arxivlanadi va istalgan vaqt qaytariladi.
 - Savatcha ochilgandan keyin narx o'zgarsa, sotuv to'xtatiladi va savatcha yangi narx bilan yangilanadi.
 
-## Ma'lumotlar va zaxira nusxa
+## Ma'lumotlar
 
 - Baza: `%APPDATA%\OxygenGym\data\oxygengym.db`
-- Har kuni dastur ochilganda avtomatik nusxa olinadi va so'nggi 14 kunlik nusxa `%APPDATA%\OxygenGym\backups` papkasida saqlanadi.
-- Sozlamalar sahifasidan nusxani USB'ga saqlash va nusxadan tiklash mumkin.
 - Yangi versiya eski bazani avtomatik yangilaydi (migratsiya). Ma'lumotlar yo'qolmaydi.
+- 1.4.0 dan boshlab zaxira nusxa bo'limi va avtomatik nusxa olish olib tashlangan. Avval olingan nusxalar `%APPDATA%\OxygenGym\backups` papkasida qoladi.
+
+## Til, telefon va kassa
+
+- Dastur tili: o'zbekcha, ruscha, inglizcha. Yon menyudagi UZ/RU/EN tugmalari yoki Sozlamalar orqali almashtiriladi. Harakatlar jurnalidagi tafsilotlar o'zbekcha saqlanadi.
+- Mijoz telefoni: `+998` o'zgarmaydi, keyin 9 ta raqam `XX XXX XX XX` ko'rinishida kiritiladi (masalan `+998 33 313 44 22`).
+- Kassa = sotuvdan tushgan pul + mijozlar to'lovi (avans, qarz uzish) − qaytarilgan pul. Qarzga sotilgan summa kassaga kirmaydi.
 
 ## Yangi versiya chiqarish
 

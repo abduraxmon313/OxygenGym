@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import Modal from './Modal';
+import { t } from '../lib/i18n';
 
 // window.confirm Electron'da kiritish maydonlari fokusini buzadi, shuning uchun o'zimizning oyna
 const ConfirmContext = createContext(() => Promise.resolve(false));
@@ -20,15 +21,15 @@ export function ConfirmProvider({ children }) {
       {request && (
         <Modal
           size="sm"
-          title={request.title || 'Tasdiqlang'}
+          title={request.title || t('Tasdiqlang')}
           onClose={() => close(false)}
           footer={(
             <>
               <button type="button" className="btn btn-secondary" onClick={() => close(false)}>
-                {request.cancelText || 'Bekor qilish'}
+                {request.cancelText || t('Bekor qilish')}
               </button>
               <button type="button" className={`btn ${request.danger ? 'btn-danger' : 'btn-primary'}`} onClick={() => close(true)} autoFocus>
-                {request.confirmText || 'Tasdiqlash'}
+                {request.confirmText || t('Tasdiqlash')}
               </button>
             </>
           )}

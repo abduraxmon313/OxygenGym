@@ -4,12 +4,13 @@ import { AlertCircle, Banknote, CheckCircle2, CreditCard, Smartphone, Wallet } f
 import Modal from './Modal';
 import MoneyInput from './MoneyInput';
 import { balanceState, som } from '../lib/format';
+import { t } from '../lib/i18n';
 
 const METHODS = [
-  { id: 'cash', label: 'Naqd', icon: Banknote },
-  { id: 'card', label: 'Karta', icon: CreditCard },
-  { id: 'click', label: 'Click', icon: Smartphone },
-  { id: 'payme', label: 'Payme', icon: Smartphone },
+  { id: 'cash', label: () => t('Naqd'), icon: Banknote },
+  { id: 'card', label: () => t('Karta'), icon: CreditCard },
+  { id: 'click', label: () => 'Click', icon: Smartphone },
+  { id: 'payme', label: () => 'Payme', icon: Smartphone },
 ];
 
 /**
@@ -19,8 +20,6 @@ const METHODS = [
  * 3) yetmagan qismi — mijoz tanlangan bo'lsa qarzga yoziladi
  * 4) ortiqcha naqd — qaytim beriladi yoki mijoz hisobiga yoziladi
  */
-export const PRICE_CHANGED_PREFIX = "Mahsulot narxi o'zgargan";
-
 export default function PaymentModal({ total, subtotal, customer, items, discount, discountType, allowDebt, onClose, onDone, onStale }) {
   const available = customer ? Math.max(0, Math.round(customer.balance)) : 0;
   const initialBalance = Math.min(available, total);
@@ -39,12 +38,12 @@ export default function PaymentModal({ total, subtotal, customer, items, discoun
   const limit = customer ? customer.debt_limit : null;
 
   let error = null;
-  if (debt > 0 && !customer) error = "To'lov yetarli emas. Qarzga sotish uchun mijozni tanlang.";
-  else if (debt > 0 && !allowDebt) error = "Qarzga sotish sozlamalarda o'chirilgan.";
+  if (debt > 0 && !customer) error = t("To'lov yetarli emas. Qarzga sotish uchun mijozni tanlang.");
+  else if (debt > 0 && !allowDebt) error = t("Qarzga sotish sozlamalarda o'chirilgan.");
   else if (debt > 0 && limit !== null && limit !== undefined && -balanceAfter > limit) {
-    error = Number(limit) === 0 ? 'Bu mijozga qarzga sotish taqiqlangan.' : `Qarz limiti (${som(limit)}) oshib ketadi.`;
+    error = Number(limit) === 0 ? t('Bu mijozga qarzga sotish taqiqlangan.') : t('Qarz limiti ({s}) oshib ketadi.', { s: som(limit) });
   } else if (change > 0 && !changeToBalance && change > (Number(amounts.cash) || 0)) {
-    error = 'Qaytim faqat naqd puldan beriladi. Karta, Click yoki Payme summasini kamaytiring.';
+    error = t('Qaytim faqat naqd puldan beriladi. Karta, Click yoki Payme summasini kamaytiring.');
   }
 
   const onlyCash = !amounts.card && !amounts.click && !amounts.payme;
@@ -79,7 +78,7 @@ export default function PaymentModal({ total, subtotal, customer, items, discoun
     } catch (err) {
       toast.error(err.message, { duration: 6000 });
       setBusy(false);
-      if (onStale && err.message.startsWith(PRICE_CHANGED_PREFIX)) onStale();
+      if (onStale && err.code === 'PRICE_CHANGED') onStale();
     }
   }
 
@@ -88,14 +87,14 @@ export default function PaymentModal({ total, subtotal, customer, items, discoun
   return (
     <Modal
       size="md"
-      title="To'lov"
-      subtitle={customer ? `Mijoz: ${customer.name}` : 'Mijozsiz sotuv — to\'liq to\'lov talab qilinadi'}
+      title={t("To'lov")}
+      subtitle={customer ? t('Mijoz: {name}', { name: customer.name }) : t("Mijozsiz sotuv — to'liq to'lov talab qilinadi")}
       onClose={onClose}
       footer={(
         <>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>Orqaga</button>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>{t('Orqaga')}</button>
           <button type="submit" form="payment-form" className="btn btn-success btn-lg" disabled={busy || Boolean(error)}>
-            <CheckCircle2 size={18} />Sotuvni yakunlash
+            <CheckCircle2 size={18} />{t('Sotuvni yakunlash')}
           </button>
         </>
       )}
@@ -103,13 +102,13 @@ export default function PaymentModal({ total, subtotal, customer, items, discoun
       <form id="payment-form" onSubmit={submit}>
         <div className="pay-hero">
           <div>
-            <div className="label">To'lanadigan summa</div>
+            <div className="label">{t("To'lanadigan summa")}</div>
             <div className="value">{som(total)}</div>
           </div>
           {subtotal !== total && (
             <div className="side">
-              <div>Jami: {som(subtotal)}</div>
-              <div>Chegirma: −{som(subtotal - total)}</div>
+              <div>{t('Jami')}: {som(subtotal)}</div>
+              <div>{t('Chegirma')}: −{som(subtotal - total)}</div>
             </div>
           )}
         </div>
@@ -117,42 +116,42 @@ export default function PaymentModal({ total, subtotal, customer, items, discoun
         {customer && available > 0 && (
           <div className="pay-box mb-16">
             <div className="row-between" style={{ marginBottom: 10 }}>
-              <div className="row"><Wallet size={16} className="muted" /><span className="strong">Mijoz hisobidan</span></div>
-              <span className="secondary tnum">Mavjud avans: <span className="amount-pos">{som(available)}</span></span>
+              <div className="row"><Wallet size={16} className="muted" /><span className="strong">{t('Mijoz hisobidan')}</span></div>
+              <span className="secondary tnum">{t('Mavjud avans')}: <span className="amount-pos">{som(available)}</span></span>
             </div>
             <div className="row">
               <div style={{ flex: 1 }}><MoneyInput value={useBalance} onChange={changeBalanceUse} /></div>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => changeBalanceUse(initialBalance)}>Maksimal</button>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => changeBalanceUse(0)}>Ishlatmaslik</button>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => changeBalanceUse(initialBalance)}>{t('Maksimal')}</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => changeBalanceUse(0)}>{t('Ishlatmaslik')}</button>
             </div>
           </div>
         )}
 
-        <div className="form-section-title">To'lov usullari</div>
+        <div className="form-section-title">{t("To'lov usullari")}</div>
         <div className="pay-methods">
           {METHODS.map((m, i) => (
             <div key={m.id} className="pay-row">
-              <span className="label"><m.icon size={16} />{m.label}</span>
+              <span className="label"><m.icon size={16} />{m.label()}</span>
               <MoneyInput
                 value={amounts[m.id]}
                 onChange={(v) => setAmounts((a) => ({ ...a, [m.id]: v }))}
                 autoFocus={i === 0}
               />
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => payFullWith(m.id)} disabled={need <= 0}>To'liq</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => payFullWith(m.id)} disabled={need <= 0}>{t("To'liq")}</button>
             </div>
           ))}
         </div>
 
         <div className="pay-box summary mt-16">
-          {balanceUsed > 0 && <div className="summary-row"><span>Hisobdan yechiladi</span><strong>{som(balanceUsed)}</strong></div>}
-          <div className="summary-row"><span>Pul bilan to'lanishi kerak</span><strong>{som(need)}</strong></div>
-          <div className="summary-row"><span>Qabul qilindi</span><strong>{som(paid)}</strong></div>
-          {change > 0 && <div className="summary-row total"><span>Qaytim</span><strong className="text-success">{som(change)}</strong></div>}
-          {debt > 0 && <div className="summary-row total"><span>Qarzga yoziladi</span><strong className="text-danger">{som(debt)}</strong></div>}
-          {change === 0 && debt === 0 && <div className="summary-row total"><span>Holat</span><strong className="text-success" style={{ fontSize: 15 }}>To'liq to'landi</strong></div>}
+          {balanceUsed > 0 && <div className="summary-row"><span>{t('Hisobdan yechiladi')}</span><strong>{som(balanceUsed)}</strong></div>}
+          <div className="summary-row"><span>{t("Pul bilan to'lanishi kerak")}</span><strong>{som(need)}</strong></div>
+          <div className="summary-row"><span>{t('Qabul qilindi')}</span><strong>{som(paid)}</strong></div>
+          {change > 0 && <div className="summary-row total"><span>{t('Qaytim')}</span><strong className="text-success">{som(change)}</strong></div>}
+          {debt > 0 && <div className="summary-row total"><span>{t('Qarzga yoziladi')}</span><strong className="text-danger">{som(debt)}</strong></div>}
+          {change === 0 && debt === 0 && <div className="summary-row total"><span>{t('Holat')}</span><strong className="text-success" style={{ fontSize: 15 }}>{t("To'liq to'landi")}</strong></div>}
           {customer && (
             <div className="summary-row">
-              <span>Sotuvdan keyingi hisob</span>
+              <span>{t('Sotuvdan keyingi hisob')}</span>
               <strong className={after.cls}>{after.amount ? `${after.label}: ${som(after.amount)}` : som(0)}</strong>
             </div>
           )}
@@ -161,7 +160,7 @@ export default function PaymentModal({ total, subtotal, customer, items, discoun
         {customer && change > 0 && (
           <label className="checkbox mt-12">
             <input type="checkbox" checked={changeToBalance} onChange={(e) => setChangeToBalance(e.target.checked)} />
-            Qaytimni ({som(change)}) naqd bermasdan mijoz hisobiga yozish
+            {t('Qaytimni ({s}) naqd bermasdan mijoz hisobiga yozish', { s: som(change) })}
           </label>
         )}
 
@@ -170,8 +169,8 @@ export default function PaymentModal({ total, subtotal, customer, items, discoun
         )}
 
         <div className="field mt-16">
-          <label>Izoh</label>
-          <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ixtiyoriy" />
+          <label>{t('Izoh')}</label>
+          <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('Ixtiyoriy')} />
         </div>
       </form>
     </Modal>

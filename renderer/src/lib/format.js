@@ -1,8 +1,26 @@
+import { getLanguage, t } from './i18n';
+
 const NBSP = '\u00a0';
 const pad = (n) => String(n).padStart(2, '0');
 
-const MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
-const WEEKDAYS = ['yakshanba', 'dushanba', 'seshanba', 'chorshanba', 'payshanba', 'juma', 'shanba'];
+const MONTHS = {
+  uz: ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'],
+  ru: ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'],
+  en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+};
+const MONTHS_SHORT = {
+  uz: ['yan', 'fev', 'mar', 'apr', 'may', 'iyn', 'iyl', 'avg', 'sen', 'okt', 'noy', 'dek'],
+  ru: ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'],
+  en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+};
+const WEEKDAYS = {
+  uz: ['yakshanba', 'dushanba', 'seshanba', 'chorshanba', 'payshanba', 'juma', 'shanba'],
+  ru: ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'],
+  en: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+};
+const CURRENCY = { uz: "so'm", ru: 'сум', en: 'UZS' };
+
+export const currency = () => CURRENCY[getLanguage()] || CURRENCY.uz;
 
 export function money(value) {
   const n = Math.round(Number(value) || 0);
@@ -10,7 +28,7 @@ export function money(value) {
   return n < 0 ? `−${s}` : s;
 }
 
-export const som = (value) => `${money(value)}${NBSP}so'm`;
+export const som = (value) => `${money(value)}${NBSP}${currency()}`;
 
 export function signedSom(value) {
   const n = Math.round(Number(value) || 0);
@@ -19,9 +37,9 @@ export function signedSom(value) {
 
 export function compactMoney(value) {
   const n = Number(value) || 0;
-  if (Math.abs(n) >= 1e9) return `${(n / 1e9).toFixed(1)} mlrd`;
-  if (Math.abs(n) >= 1e6) return `${(n / 1e6).toFixed(1)} mln`;
-  if (Math.abs(n) >= 1e3) return `${Math.round(n / 1e3)} ming`;
+  if (Math.abs(n) >= 1e9) return `${(n / 1e9).toFixed(1)} ${t('mlrd')}`;
+  if (Math.abs(n) >= 1e6) return `${(n / 1e6).toFixed(1)} ${t('mln')}`;
+  if (Math.abs(n) >= 1e3) return `${Math.round(n / 1e3)} ${t('ming')}`;
   return String(Math.round(n));
 }
 
@@ -47,12 +65,19 @@ export function fmtDateTime(value) {
 }
 
 export function longDate(d = new Date()) {
-  return `${d.getDate()}-${MONTHS[d.getMonth()]}, ${d.getFullYear()} · ${WEEKDAYS[d.getDay()]}`;
+  const lang = getLanguage();
+  const month = MONTHS[lang][d.getMonth()];
+  const day = WEEKDAYS[lang][d.getDay()];
+  if (lang === 'en') return `${day}, ${month} ${d.getDate()}, ${d.getFullYear()}`;
+  if (lang === 'ru') return `${d.getDate()} ${month} ${d.getFullYear()} · ${day}`;
+  return `${d.getDate()}-${month}, ${d.getFullYear()} · ${day}`;
 }
 
 export function shortDay(iso) {
   const d = parse(iso);
-  return d ? `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}` : '';
+  if (!d) return '';
+  const m = MONTHS_SHORT[getLanguage()][d.getMonth()];
+  return getLanguage() === 'en' ? `${m} ${d.getDate()}` : `${d.getDate()} ${m}`;
 }
 
 export function isoDate(d = new Date()) {
@@ -72,51 +97,66 @@ export function monthRange(offset = 0) {
   return [isoDate(start), isoDate(end)];
 }
 
-export const DATE_PRESETS = [
-  { id: 'today', label: 'Bugun', range: () => [isoDate(), isoDate()] },
-  { id: 'week', label: '7 kun', range: () => [daysAgo(6), isoDate()] },
-  { id: 'month', label: 'Shu oy', range: () => monthRange(0) },
-  { id: 'prev', label: "O'tgan oy", range: () => monthRange(-1) },
+export const datePresets = () => [
+  { id: 'today', label: t('Bugun'), range: () => [isoDate(), isoDate()] },
+  { id: 'week', label: t('7 kun'), range: () => [daysAgo(6), isoDate()] },
+  { id: 'month', label: t('Shu oy'), range: () => monthRange(0) },
+  { id: 'prev', label: t("O'tgan oy"), range: () => monthRange(-1) },
 ];
 
-export const MONEY_METHODS = [
-  { id: 'cash', label: 'Naqd' },
-  { id: 'card', label: 'Karta' },
+export const moneyMethods = () => [
+  { id: 'cash', label: t('Naqd') },
+  { id: 'card', label: t('Karta') },
   { id: 'click', label: 'Click' },
   { id: 'payme', label: 'Payme' },
 ];
 
-export const PAYMENT_LABELS = {
-  cash: 'Naqd',
-  card: 'Karta',
-  click: 'Click',
-  payme: 'Payme',
-  balance: 'Mijoz hisobidan',
-  debt: 'Qarzga',
-  mixed: 'Aralash',
-};
+export function paymentLabel(method) {
+  const map = {
+    cash: t('Naqd'),
+    card: t('Karta'),
+    click: 'Click',
+    payme: 'Payme',
+    balance: t('Mijoz hisobidan'),
+    debt: t('Qarzga'),
+    mixed: t('Aralash'),
+  };
+  return map[method] || method;
+}
 
-export const TX_LABELS = {
-  deposit: "To'lov qabul qilindi",
-  withdraw: 'Pul qaytarildi',
-  sale: 'Xarid',
-  refund: 'Qaytarish',
-  adjustment: 'Tuzatish',
-};
+export function txLabel(type) {
+  const map = {
+    deposit: t("To'lov qabul qilindi"),
+    withdraw: t('Pul qaytarildi'),
+    sale: t('Xarid'),
+    refund: t('Qaytarish'),
+    adjustment: t('Tuzatish'),
+  };
+  return map[type] || type;
+}
+
+export const UNITS = ['dona', 'quti', 'paket', 'shisha', 'kg', 'litr'];
+export function unitLabel(u) {
+  const map = { dona: t('dona'), quti: t('quti'), paket: t('paket'), shisha: t('shisha'), kg: t('kg'), litr: t('litr') };
+  return map[u || 'dona'] || u;
+}
 
 export function methodsText(methods) {
   if (!methods) return '—';
   const unique = Array.from(new Set(String(methods).split(',')));
-  return unique.map((m) => PAYMENT_LABELS[m] || m).join(' + ');
+  return unique.map(paymentLabel).join(' + ');
 }
 
 export function productMeta(p) {
   return [p.brand, p.weight, p.flavor].filter(Boolean).join(' · ');
 }
 
+// Kategoriya nomlari bazada o'zbekcha saqlanadi — ko'rsatishda tarjima qilinadi
+export const catName = (name) => (name ? t(name) : name);
+
 export function categoryLabel(p) {
-  if (!p.category_name) return 'Kategoriyasiz';
-  return p.parent_category_name ? `${p.parent_category_name} / ${p.category_name}` : p.category_name;
+  if (!p.category_name) return t('Kategoriyasiz');
+  return p.parent_category_name ? `${catName(p.parent_category_name)} / ${catName(p.category_name)}` : catName(p.category_name);
 }
 
 export function initials(name) {
@@ -125,12 +165,19 @@ export function initials(name) {
 
 export function balanceState(balance) {
   const b = Math.round(Number(balance) || 0);
-  if (b > 0) return { tone: 'success', cls: 'amount-pos', label: 'Avans', amount: b };
-  if (b < 0) return { tone: 'danger', cls: 'amount-neg', label: 'Qarz', amount: -b };
-  return { tone: 'neutral', cls: 'amount-zero', label: 'Hisob nol', amount: 0 };
+  if (b > 0) return { tone: 'success', cls: 'amount-pos', kind: 'advance', label: t('Avans'), amount: b };
+  if (b < 0) return { tone: 'danger', cls: 'amount-neg', kind: 'debt', label: t('Qarz'), amount: -b };
+  return { tone: 'neutral', cls: 'amount-zero', kind: 'zero', label: t('Hisob nol'), amount: 0 };
 }
 
-export function fileSize(bytes) {
-  if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)} MB`;
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+// Telefon: bazada "+998 33 313 44 22", formada faqat 9 ta raqam
+export function phoneDigits(v) {
+  let d = String(v || '').replace(/\D/g, '');
+  if (d.length >= 12 && d.startsWith('998')) d = d.slice(3);
+  return d.slice(0, 9);
+}
+
+export function groupPhone(d) {
+  const parts = [d.slice(0, 2), d.slice(2, 5), d.slice(5, 7), d.slice(7, 9)].filter(Boolean);
+  return parts.join(' ');
 }

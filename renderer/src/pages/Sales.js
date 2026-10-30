@@ -3,7 +3,8 @@ import { toast } from 'react-hot-toast';
 import { HandCoins, Receipt, RotateCcw, TrendingUp } from 'lucide-react';
 import { DateRange, EmptyState, PageHeader, SaleStatus, SearchInput, Segmented, StatCard } from '../components/ui';
 import SaleDetail from '../components/SaleDetail';
-import { fmtDateTime, isoDate, methodsText, money } from '../lib/format';
+import { currency, fmtDateTime, isoDate, methodsText, money, som } from '../lib/format';
+import { t } from '../lib/i18n';
 
 export default function Sales({ refreshAlerts }) {
   const [sales, setSales] = useState([]);
@@ -28,8 +29,8 @@ export default function Sales({ refreshAlerts }) {
   }, [from, to, query, status]);
 
   useEffect(() => {
-    const t = setTimeout(load, 150);
-    return () => clearTimeout(t);
+    const timer = setTimeout(load, 150);
+    return () => clearTimeout(timer);
   }, [load]);
 
   const summary = useMemo(() => sales.reduce((s, x) => {
@@ -45,20 +46,20 @@ export default function Sales({ refreshAlerts }) {
 
   return (
     <>
-      <PageHeader title="Sotuvlar" subtitle="Barcha cheklar, to'lov tafsilotlari va qaytarishlar" />
+      <PageHeader title={t('Sotuvlar')} subtitle={t("Barcha cheklar, to'lov tafsilotlari va qaytarishlar")} />
       <div className="content">
         <div className="stat-grid">
-          <StatCard label="Sotuvlar" value={summary.count} unit="ta" hint="Tanlangan davrda" icon={Receipt} tone="primary" />
-          <StatCard label="Savdo summasi" value={money(summary.revenue)} unit="so'm" icon={TrendingUp} tone="success" />
-          <StatCard label="Qarzga sotilgan" value={money(summary.debt)} unit="so'm" icon={HandCoins} tone={summary.debt ? 'danger' : 'neutral'} />
-          <StatCard label="Qaytarilgan" value={summary.refunded} unit="ta" hint={summary.refunded ? `${money(summary.refundedSum)} so'm` : undefined} icon={RotateCcw} tone="warning" />
+          <StatCard label={t('Sotuvlar')} value={summary.count} unit={t('ta')} hint={t('Tanlangan davrda')} icon={Receipt} tone="primary" />
+          <StatCard label={t('Savdo summasi')} value={money(summary.revenue)} unit={currency()} icon={TrendingUp} tone="success" />
+          <StatCard label={t('Qarzga sotilgan')} value={money(summary.debt)} unit={currency()} icon={HandCoins} tone={summary.debt ? 'danger' : 'neutral'} />
+          <StatCard label={t('Qaytarilgan')} value={summary.refunded} unit={t('ta')} hint={summary.refunded ? som(summary.refundedSum) : undefined} icon={RotateCcw} tone="warning" />
         </div>
 
         <div className="toolbar">
           <DateRange from={from} to={to} onChange={(a, b) => { setFrom(a); setTo(b); }} />
-          <SearchInput value={query} onChange={setQuery} placeholder="Chek raqami, mijoz yoki telefon" />
+          <SearchInput value={query} onChange={setQuery} placeholder={t('Chek raqami, mijoz yoki telefon')} />
           <Segmented
-            options={[{ id: 'all', label: 'Hammasi' }, { id: 'completed', label: 'Yakunlangan' }, { id: 'debt', label: 'Qarzga' }, { id: 'returned', label: 'Qaytarishlar' }]}
+            options={[{ id: 'all', label: t('Hammasi') }, { id: 'completed', label: t('Yakunlangan') }, { id: 'debt', label: t('Qarzga') }, { id: 'returned', label: t('Qaytarishlar') }]}
             value={status}
             onChange={setStatus}
           />
@@ -66,13 +67,13 @@ export default function Sales({ refreshAlerts }) {
 
         <div className="table-wrap">
           {sales.length === 0 ? (
-            <EmptyState icon={Receipt} title="Sotuv topilmadi" text="Sana oralig'ini yoki filtrlarni o'zgartiring" />
+            <EmptyState icon={Receipt} title={t('Sotuv topilmadi')} text={t("Sana oralig'ini yoki filtrlarni o'zgartiring")} />
           ) : (
             <table className="table">
               <thead>
                 <tr>
-                  <th>Chek</th><th>Sana</th><th>Mijoz</th><th className="num">Miqdor</th><th>To'lov</th>
-                  <th className="num">Summa</th><th className="num">Qarzga</th><th>Holat</th>
+                  <th>{t('Chek')}</th><th>{t('Sana')}</th><th>{t('Mijoz')}</th><th className="num">{t('Miqdor')}</th><th>{t("To'lov")}</th>
+                  <th className="num">{t('Summa')}</th><th className="num">{t('Qarzga')}</th><th>{t('Holat')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -80,7 +81,7 @@ export default function Sales({ refreshAlerts }) {
                   <tr key={s.id} className="clickable" onClick={() => setSaleId(s.id)}>
                     <td className="mono">{s.sale_number}</td>
                     <td className="nowrap">{fmtDateTime(s.created_at)}</td>
-                    <td>{s.customer_name ? <><div className="cell-title">{s.customer_name}</div>{s.customer_phone && <div className="cell-sub">{s.customer_phone}</div>}</> : <span className="muted">Mijozsiz</span>}</td>
+                    <td>{s.customer_name ? <><div className="cell-title">{s.customer_name}</div>{s.customer_phone && <div className="cell-sub tnum">{s.customer_phone}</div>}</> : <span className="muted">{t('Mijozsiz')}</span>}</td>
                     <td className="num">{s.items_qty}</td>
                     <td className="secondary">{methodsText(s.methods)}</td>
                     <td className="num strong">{money(s.final_total)}{s.returned_amount > 0 && <div className="cell-sub text-danger">−{money(s.returned_amount)}</div>}</td>

@@ -4,7 +4,11 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 // IPC javobini ochib beradi: xato bo'lsa toza o'zbekcha xabar bilan Error tashlaydi
 const call = (channel) => (...args) => ipcRenderer.invoke(channel, ...args).then((res) => {
-  if (!res || !res.ok) throw new Error((res && res.error) || "Noma'lum xatolik");
+  if (!res || !res.ok) {
+    const err = new Error((res && res.error) || 'Error');
+    if (res && res.code) err.code = res.code;
+    throw err;
+  }
   return res.data;
 });
 
@@ -17,7 +21,6 @@ const on = (channel) => (callback) => {
 contextBridge.exposeInMainWorld('api', {
   app: {
     info: call('app:info'),
-    openBackupFolder: call('app:openBackupFolder'),
   },
   products: {
     getAll: call('products:getAll'),
@@ -74,14 +77,10 @@ contextBridge.exposeInMainWorld('api', {
   settings: {
     get: call('settings:get'),
     update: call('settings:update'),
+    setLanguage: call('settings:setLanguage'),
   },
   audit: {
     list: call('audit:list'),
-  },
-  backup: {
-    info: call('backup:info'),
-    create: call('backup:create'),
-    restore: call('backup:restore'),
   },
   updates: {
     check: call('updates:check'),
