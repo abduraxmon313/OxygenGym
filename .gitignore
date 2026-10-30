@@ -9,3 +9,4 @@ renderer/build/
 Thumbs.db
 node_modules/
 package-lock.json
+renderer/public/logo.png

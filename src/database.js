@@ -4,7 +4,8 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
+const PRICE_CHANGED = "Mahsulot narxi o'zgargan. Savatcha yangi narxlar bilan yangilandi — summani qayta tekshiring";
 const MONEY_METHODS = ['cash', 'card', 'click', 'payme'];
 const SETTING_KEYS = ['shopName', 'shopPhone', 'shopAddress', 'allowDebt', 'lowStockAlert', 'expiryAlertDays'];
 
@@ -39,8 +40,14 @@ const BRANDS = [
   'Swanson', 'Thorne', 'Ultimate Nutrition', 'Universal Nutrition', 'USN', 'Vital Proteins', 'Weider',
 ];
 
-// Chegirma sotuv darajasida beriladi — mahsulot qatoriga proporsional taqsimlanadi
-const REVENUE_EXPR = 'si.total * (CASE WHEN s.total > 0 THEN s.final_total * 1.0 / s.total ELSE 0 END)';
+// Chegirma sotuv darajasida beriladi — mahsulot qatoriga proporsional taqsimlanadi.
+// Qaytarilgan miqdor (returned_qty) savdo va tannarxdan ayiriladi.
+const NET_QTY = '(si.quantity - si.returned_qty)';
+const REVENUE_EXPR = `si.price * ${NET_QTY} * (CASE WHEN s.total > 0 THEN s.final_total * 1.0 / s.total ELSE 0 END)`;
+const COST_EXPR = `si.cost_price * ${NET_QTY}`;
+const EXPIRED_QTY = `(SELECT COALESCE(SUM(b.remaining), 0) FROM product_batches b
+  WHERE b.product_id = p.id AND b.remaining > 0 AND b.expiry_date IS NOT NULL AND b.expiry_date < date('now', 'localtime'))`;
+const ADJUST_TYPES = { writeoff: 'Hisobdan chiqarish', correction: 'Qoldiqni tuzatish' };
 
 const pad = (n) => String(n).padStart(2, '0');
 function isoDate(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
@@ -145,11 +152,84 @@ class DB {
 
   migrate() {
     const current = this.db.pragma('user_version', { simple: true });
-    if (current < 2) {
-      this.db.transaction(() => this.migrateToV2())();
-      this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
-      this.logger.info && this.logger.info('Database migrated to v2');
+    if (current > SCHEMA_VERSION) {
+      fail("Ma'lumotlar bazasi dasturning yangiroq versiyasida yaratilgan. Dasturni yangilang");
     }
+    const steps = [[2, () => this.migrateToV2()], [3, () => this.migrateToV3()]];
+    steps.forEach(([version, run]) => {
+      if (current >= version) return;
+      this.db.transaction(run)();
+      this.db.pragma(`user_version = ${version}`);
+      if (this.logger.info) this.logger.info(`Database migrated to v${version}`);
+    });
+  }
+
+  migrateToV3() {
+    const db = this.db;
+    this.addColumn('sale_items', 'returned_qty', 'INTEGER NOT NULL DEFAULT 0');
+    this.addColumn('sales', 'returned_amount', 'REAL NOT NULL DEFAULT 0');
+    this.addColumn('sales', 'returned_to_account', 'REAL NOT NULL DEFAULT 0');
+    this.addColumn('stock_receipts', 'cancelled_at', 'TEXT');
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sale_returns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        return_number TEXT NOT NULL UNIQUE,
+        sale_id INTEGER NOT NULL REFERENCES sales(id),
+        amount REAL NOT NULL,
+        cost REAL NOT NULL DEFAULT 0,
+        to_account REAL NOT NULL DEFAULT 0,
+        cash_back REAL NOT NULL DEFAULT 0,
+        note TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS sale_return_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        return_id INTEGER NOT NULL REFERENCES sale_returns(id),
+        sale_item_id INTEGER NOT NULL REFERENCES sale_items(id),
+        product_id INTEGER NOT NULL REFERENCES products(id),
+        quantity INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        cost REAL NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS stock_adjustments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL REFERENCES products(id),
+        batch_id INTEGER REFERENCES product_batches(id),
+        quantity INTEGER NOT NULL,
+        cost_price REAL NOT NULL DEFAULT 0,
+        type TEXT NOT NULL,
+        reason TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_returns_sale ON sale_returns(sale_id);
+      CREATE INDEX IF NOT EXISTS idx_returns_created ON sale_returns(created_at);
+      CREATE INDEX IF NOT EXISTS idx_adjust_product ON stock_adjustments(product_id);
+      CREATE INDEX IF NOT EXISTS idx_adjust_created ON stock_adjustments(created_at);
+      CREATE INDEX IF NOT EXISTS idx_batches_receipt ON product_batches(receipt_id);
+    `);
+
+    // v1.1–1.2 dagi to'liq qaytarishlarni yangi "qaytarish" yozuvlariga o'tkazamiz
+    const refunded = db.prepare("SELECT * FROM sales WHERE status = 'refunded' AND returned_amount = 0").all();
+    const insReturn = db.prepare(`INSERT INTO sale_returns (return_number, sale_id, amount, cost, to_account, cash_back, note, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    const insItem = db.prepare(`INSERT INTO sale_return_items (return_id, sale_item_id, product_id, quantity, amount, cost)
+      VALUES (?, ?, ?, ?, ?, ?)`);
+    refunded.forEach((s, i) => {
+      const items = db.prepare('SELECT * FROM sale_items WHERE sale_id = ?').all(s.id);
+      const cost = items.reduce((t, it) => t + it.cost_price * it.quantity, 0);
+      const toAccount = s.customer_id ? Math.max(0, s.final_total - s.refund_cash) : 0;
+      const returnId = Number(insReturn.run(`Q${String(i + 1).padStart(6, '0')}`, s.id, s.final_total, cost, toAccount,
+        s.refund_cash, "v1.2 dan ko'chirilgan", s.refunded_at || s.created_at).lastInsertRowid);
+      const ratio = s.total > 0 ? s.final_total / s.total : 0;
+      items.forEach((it) => insItem.run(returnId, it.id, it.product_id, it.quantity, Math.round(it.total * ratio), it.cost_price * it.quantity));
+      db.prepare('UPDATE sale_items SET returned_qty = quantity WHERE sale_id = ?').run(s.id);
+      db.prepare('UPDATE sales SET returned_amount = final_total, returned_to_account = ? WHERE id = ?')
+        .run(Math.min(toAccount, s.balance_used + s.debt_amount), s.id);
+    });
+
+    // Katta rasmlar endi kichraytirib saqlanadi; 1.5 MB dan katta eski rasmlarni olib tashlaymiz
+    db.prepare('UPDATE products SET image = NULL WHERE image IS NOT NULL AND length(image) > 1500000').run();
   }
 
   addColumn(table, column, definition) {
@@ -310,24 +390,52 @@ class DB {
   // ================= PRODUCTS =================
 
   productSelect() {
-    return `SELECT p.*, c.name AS category_name, c.parent_id AS category_parent_id, pc.name AS parent_category_name
+    return `SELECT p.*, c.name AS category_name, c.parent_id AS category_parent_id, pc.name AS parent_category_name,
+        ${EXPIRED_QTY} AS expired_qty
       FROM products p
       LEFT JOIN categories c ON c.id = p.category_id
       LEFT JOIN categories pc ON pc.id = c.parent_id`;
   }
 
+  // sellable: sotish mumkin bo'lgan qoldiq (muddati o'tgan partiyalar hisobga olinmaydi)
+  withSellable(rows) {
+    return rows.map((p) => ({ ...p, sellable: Math.max(0, p.stock - p.expired_qty) }));
+  }
+
   getProducts() {
-    return this.db.prepare(`${this.productSelect()} WHERE p.is_active = 1 ORDER BY p.name COLLATE NOCASE`).all();
+    return this.withSellable(this.db.prepare(`${this.productSelect()} WHERE p.is_active = 1 ORDER BY p.name COLLATE NOCASE`).all());
+  }
+
+  getArchivedProducts() {
+    return this.withSellable(this.db.prepare(`${this.productSelect()} WHERE p.is_active = 0 ORDER BY p.updated_at DESC`).all());
+  }
+
+  restoreProduct(id) {
+    const p = this.db.prepare('SELECT name, is_active FROM products WHERE id = ?').get(id);
+    if (!p) fail('Mahsulot topilmadi');
+    if (p.is_active) return true;
+    this.db.prepare('UPDATE products SET is_active = 1, updated_at = ? WHERE id = ?').run(now(), id);
+    this.log('RESTORE', 'product', id, `Mahsulot arxivdan qaytarildi: ${p.name}`);
+    return true;
   }
 
   getProductById(id) {
-    const product = this.db.prepare(`${this.productSelect()} WHERE p.id = ?`).get(id);
-    if (!product) return null;
+    const row = this.db.prepare(`${this.productSelect()} WHERE p.id = ?`).get(id);
+    if (!row) return null;
+    const [product] = this.withSellable([row]);
     product.batches = this.db.prepare(`
-      SELECT pb.*, sr.receipt_number FROM product_batches pb
+      SELECT pb.*, sr.receipt_number,
+        CAST(julianday(pb.expiry_date) - julianday(date('now','localtime')) AS INTEGER) AS days_left
+      FROM product_batches pb
       LEFT JOIN stock_receipts sr ON sr.id = pb.receipt_id
       WHERE pb.product_id = ? AND pb.remaining > 0
       ORDER BY (pb.expiry_date IS NULL), pb.expiry_date, pb.id
+    `).all(id);
+    const inBatches = product.batches.reduce((s, b) => s + b.remaining, 0);
+    product.unbatched = Math.max(0, product.stock - inBatches);
+    product.adjustments = this.db.prepare(`
+      SELECT a.*, pb.batch_number FROM stock_adjustments a LEFT JOIN product_batches pb ON pb.id = a.batch_id
+      WHERE a.product_id = ? ORDER BY a.id DESC LIMIT 50
     `).all(id);
     return product;
   }
@@ -358,13 +466,25 @@ class DB {
       sell_price: sell,
       min_stock: Math.max(0, toInt(input.min_stock)),
       unit: opt(input.unit) || 'dona',
-      image: opt(input.image),
+      image: this.normalizeImage(input.image),
     };
   }
 
   ensureCodeFree(code, exceptId) {
-    const row = this.db.prepare('SELECT id, name FROM products WHERE code = ? AND id <> ?').get(code, exceptId || 0);
-    if (row) fail(`"${code}" kodi "${row.name}" mahsulotida ishlatilgan`);
+    const row = this.db.prepare('SELECT id, name, is_active FROM products WHERE code = ? AND id <> ?').get(code, exceptId || 0);
+    if (row) {
+      fail(row.is_active
+        ? `"${code}" kodi "${row.name}" mahsulotida ishlatilgan`
+        : `"${code}" kodi arxivdagi "${row.name}" mahsulotiga tegishli. Uni arxivdan qaytaring yoki boshqa kod kiriting`);
+    }
+  }
+
+  normalizeImage(image) {
+    const v = opt(image);
+    if (!v) return null;
+    if (!/^data:image\/(png|jpe?g|webp);base64,/.test(v)) fail("Rasm formati noto'g'ri");
+    if (v.length > 1500000) fail('Rasm juda katta');
+    return v;
   }
 
   createProduct(input) {
@@ -412,15 +532,98 @@ class DB {
   }
 
   deleteProduct(id) {
-    const p = this.db.prepare('SELECT name, stock FROM products WHERE id = ?').get(id);
+    const p = this.db.prepare('SELECT name, stock, is_active FROM products WHERE id = ?').get(id);
     if (!p) fail('Mahsulot topilmadi');
+    if (!p.is_active) return true;
     this.db.prepare('UPDATE products SET is_active = 0, updated_at = ? WHERE id = ?').run(now(), id);
     this.log('DELETE', 'product', id, `Mahsulot arxivlandi: ${p.name} (qoldiq: ${p.stock})`);
     return true;
   }
 
   getLowStockProducts() {
-    return this.db.prepare(`${this.productSelect()} WHERE p.is_active = 1 AND p.stock <= p.min_stock ORDER BY p.stock, p.name`).all();
+    return this.withSellable(this.db.prepare(`${this.productSelect()} WHERE p.is_active = 1
+      AND (p.stock - ${EXPIRED_QTY}) <= p.min_stock ORDER BY p.stock, p.name`).all());
+  }
+
+  // ================= STOCK ADJUSTMENTS (hisobdan chiqarish / qoldiqni tuzatish) =================
+
+  // Partiyalardan qty dona ayiradi. Avval muddati o'tgan, keyin eng yaqin muddatli partiyadan.
+  takeFromBatches(productId, qty, batchId) {
+    const product = this.db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
+    let rest = qty;
+    const taken = [];
+    const batches = batchId
+      ? this.db.prepare('SELECT * FROM product_batches WHERE id = ? AND product_id = ? AND remaining > 0').all(batchId, productId)
+      : this.db.prepare(`SELECT * FROM product_batches WHERE product_id = ? AND remaining > 0
+          ORDER BY (expiry_date IS NULL), expiry_date, id`).all(productId);
+    if (batchId && !batches.length) fail('Partiya topilmadi yoki qoldig\'i yo\'q');
+    if (batchId && batches[0].remaining < qty) fail(`Bu partiyada faqat ${batches[0].remaining} dona bor`);
+    const take = this.db.prepare('UPDATE product_batches SET remaining = remaining - ? WHERE id = ?');
+    batches.forEach((b) => {
+      if (rest <= 0) return;
+      const n = Math.min(rest, b.remaining);
+      take.run(n, b.id);
+      taken.push({ batch_id: b.id, qty: n, cost: b.cost_price });
+      rest -= n;
+    });
+    if (rest > 0 && !batchId) taken.push({ batch_id: null, qty: rest, cost: product.cost_price });
+    return taken;
+  }
+
+  writeOffStock(input = {}) {
+    return this.db.transaction(() => {
+      const p = this.db.prepare('SELECT * FROM products WHERE id = ?').get(input.product_id);
+      if (!p) fail('Mahsulot topilmadi');
+      const qty = toInt(input.quantity);
+      if (qty <= 0) fail('Miqdorni kiriting');
+      if (qty > p.stock) fail(`Omborda faqat ${p.stock} ${p.unit || 'dona'} bor`);
+      const reason = opt(input.reason);
+      if (!reason) fail('Sababini yozing');
+      const ts = now();
+      const parts = this.takeFromBatches(p.id, qty, input.batch_id ? Number(input.batch_id) : null);
+      const ins = this.db.prepare(`INSERT INTO stock_adjustments (product_id, batch_id, quantity, cost_price, type, reason, created_at)
+        VALUES (?, ?, ?, ?, 'writeoff', ?, ?)`);
+      parts.forEach((x) => ins.run(p.id, x.batch_id, -x.qty, x.cost, reason, ts));
+      this.db.prepare('UPDATE products SET stock = stock - ?, updated_at = ? WHERE id = ?').run(qty, ts, p.id);
+      const loss = parts.reduce((s, x) => s + x.qty * x.cost, 0);
+      this.log('WRITEOFF', 'product', p.id, `${p.name}: ${qty} ${p.unit || 'dona'} hisobdan chiqarildi (${reason}), zarar ${fmt(loss)}`);
+      return { loss };
+    })();
+  }
+
+  correctStock(input = {}) {
+    return this.db.transaction(() => {
+      const p = this.db.prepare('SELECT * FROM products WHERE id = ?').get(input.product_id);
+      if (!p) fail('Mahsulot topilmadi');
+      const actual = Number(input.actual);
+      if (!Number.isInteger(actual) || actual < 0) fail("Haqiqiy qoldiq musbat butun son bo'lishi kerak");
+      const reason = opt(input.reason) || 'Inventarizatsiya';
+      const diff = actual - p.stock;
+      if (diff === 0) return { diff: 0 };
+      const ts = now();
+      const ins = this.db.prepare(`INSERT INTO stock_adjustments (product_id, batch_id, quantity, cost_price, type, reason, created_at)
+        VALUES (?, ?, ?, ?, 'correction', ?, ?)`);
+      if (diff < 0) {
+        this.takeFromBatches(p.id, -diff, null).forEach((x) => ins.run(p.id, x.batch_id, -x.qty, x.cost, reason, ts));
+      } else {
+        const batchId = Number(this.db.prepare(`INSERT INTO product_batches (product_id, receipt_id, batch_number, quantity, remaining, cost_price, expiry_date, created_at)
+          VALUES (?, NULL, ?, ?, ?, ?, NULL, ?)`).run(p.id, `T-${Date.now()}`, diff, diff, p.cost_price, ts).lastInsertRowid);
+        ins.run(p.id, batchId, diff, p.cost_price, reason, ts);
+      }
+      this.db.prepare('UPDATE products SET stock = ?, updated_at = ? WHERE id = ?').run(actual, ts, p.id);
+      this.log('ADJUST_STOCK', 'product', p.id, `${p.name}: qoldiq ${p.stock} → ${actual} (${reason})`);
+      return { diff };
+    })();
+  }
+
+  getAdjustments(filters = {}) {
+    const [from, to] = range(filters);
+    return this.db.prepare(`
+      SELECT a.*, p.name AS product_name, p.code, p.brand, p.flavor, p.weight, p.unit, pb.batch_number
+      FROM stock_adjustments a JOIN products p ON p.id = a.product_id
+      LEFT JOIN product_batches pb ON pb.id = a.batch_id
+      WHERE date(a.created_at) BETWEEN ? AND ? ORDER BY a.id DESC LIMIT 1000
+    `).all(from, to).map((a) => ({ ...a, type_label: ADJUST_TYPES[a.type] || a.type }));
   }
 
   getExpiringProducts(days) {
@@ -507,7 +710,35 @@ class DB {
       FROM stock_receipt_items sri JOIN products p ON p.id = sri.product_id
       WHERE sri.receipt_id = ? ORDER BY sri.id
     `).all(id);
+    const used = this.db.prepare(`SELECT COALESCE(SUM(quantity - remaining), 0) AS n FROM product_batches WHERE receipt_id = ?`).get(id).n;
+    receipt.used_qty = used;
+    receipt.can_cancel = receipt.status === 'completed' && used === 0;
     return receipt;
+  }
+
+  // Xato kiritilgan kirimni bekor qilish. Faqat undan hech narsa sotilmagan/chiqarilmagan bo'lsa.
+  cancelReceipt(id, input = {}) {
+    return this.db.transaction(() => {
+      const r = this.db.prepare('SELECT * FROM stock_receipts WHERE id = ?').get(id);
+      if (!r) fail('Kirim topilmadi');
+      if (r.status !== 'completed') fail('Bu kirim allaqachon bekor qilingan');
+      const batches = this.db.prepare('SELECT * FROM product_batches WHERE receipt_id = ?').all(id);
+      const used = batches.reduce((s, b) => s + (b.quantity - b.remaining), 0);
+      if (used > 0) {
+        fail(`Bu kirimdan ${used} dona sotilgan yoki hisobdan chiqarilgan, bekor qilib bo'lmaydi. Ortiqcha qismini mahsulot kartasidagi "Qoldiqni tuzatish" orqali to'g'rilang`);
+      }
+      const ts = now();
+      const updStock = this.db.prepare('UPDATE products SET stock = stock - ?, updated_at = ? WHERE id = ?');
+      batches.forEach((b) => {
+        updStock.run(b.remaining, ts, b.product_id);
+        this.db.prepare('UPDATE product_batches SET remaining = 0 WHERE id = ?').run(b.id);
+      });
+      const note = opt(input.reason);
+      this.db.prepare("UPDATE stock_receipts SET status = 'cancelled', cancelled_at = ?, notes = COALESCE(notes || ' · ', '') || ? WHERE id = ?")
+        .run(ts, `Bekor qilindi${note ? `: ${note}` : ''}`, id);
+      this.log('RECEIVE_CANCEL', 'stock', id, `Kirim ${r.receipt_number} bekor qilindi${note ? ` (${note})` : ''}`);
+      return true;
+    })();
   }
 
   // ================= CUSTOMERS & BALANCE =================
@@ -515,13 +746,13 @@ class DB {
   customerSelect() {
     return `SELECT c.id, c.name, c.phone, c.notes, c.balance, c.debt_limit, c.is_active, c.created_at, c.updated_at,
       (SELECT COUNT(*) FROM sales s WHERE s.customer_id = c.id AND s.status = 'completed') AS purchases_count,
-      (SELECT COALESCE(SUM(s.final_total), 0) FROM sales s WHERE s.customer_id = c.id AND s.status = 'completed') AS purchases_total,
+      (SELECT COALESCE(SUM(s.final_total - s.returned_amount), 0) FROM sales s WHERE s.customer_id = c.id) AS purchases_total,
       (SELECT MAX(t.created_at) FROM customer_transactions t WHERE t.customer_id = c.id) AS last_activity
       FROM customers c`;
   }
 
   getCustomers(filters = {}) {
-    let where = 'WHERE c.is_active = 1';
+    let where = filters.status === 'archived' ? 'WHERE c.is_active = 0' : 'WHERE c.is_active = 1';
     const params = [];
     if (filters.status === 'debt') where += ' AND c.balance < 0';
     if (filters.status === 'advance') where += ' AND c.balance > 0';
@@ -553,7 +784,7 @@ class DB {
       WHERE t.customer_id = ? ORDER BY t.id DESC LIMIT 1000
     `).all(id);
     customer.sales = this.db.prepare(`
-      SELECT s.id, s.sale_number, s.final_total, s.paid_amount, s.balance_used, s.debt_amount, s.status, s.created_at,
+      SELECT s.id, s.sale_number, s.final_total, s.paid_amount, s.balance_used, s.debt_amount, s.status, s.created_at, s.returned_amount,
         (SELECT COUNT(*) FROM sale_items WHERE sale_id = s.id) AS items_count
       FROM sales s WHERE s.customer_id = ? ORDER BY s.id DESC LIMIT 300
     `).all(id);
@@ -647,6 +878,18 @@ class DB {
     return true;
   }
 
+  restoreCustomer(id) {
+    return this.db.transaction(() => {
+      const c = this.db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
+      if (!c) fail('Mijoz topilmadi');
+      if (c.is_active) return true;
+      this.ensurePhoneFree(c.phone, id);
+      this.db.prepare('UPDATE customers SET is_active = 1, updated_at = ? WHERE id = ?').run(now(), id);
+      this.log('RESTORE', 'customer', id, `Mijoz arxivdan qaytarildi: ${c.name}`);
+      return true;
+    })();
+  }
+
   customerDeposit(id, input = {}) {
     return this.db.transaction(() => {
       const c = this.getActiveCustomer(id);
@@ -702,13 +945,18 @@ class DB {
         qtyById.set(pid, (qtyById.get(pid) || 0) + q);
       });
 
-      const getProduct = this.db.prepare('SELECT * FROM products WHERE id = ? AND is_active = 1');
+      const getProduct = this.db.prepare(`SELECT p.*, ${EXPIRED_QTY} AS expired_qty FROM products p WHERE p.id = ? AND p.is_active = 1`);
       const lines = [];
       let subtotal = 0;
       qtyById.forEach((qty, pid) => {
         const p = getProduct.get(pid);
-        if (!p) fail("Mahsulot topilmadi yoki o'chirilgan");
-        if (p.stock < qty) fail(`"${p.name}" omborda yetarli emas. Qoldiq: ${p.stock} ${p.unit || 'dona'}`);
+        if (!p) fail("Mahsulot topilmadi yoki arxivlangan");
+        const sellable = Math.max(0, p.stock - p.expired_qty);
+        if (sellable < qty) {
+          fail(p.expired_qty > 0 && p.stock >= qty
+            ? `"${p.name}": ${p.expired_qty} donasining yaroqlilik muddati o'tgan. Sotish mumkin: ${sellable} ${p.unit || 'dona'}`
+            : `"${p.name}" omborda yetarli emas. Qoldiq: ${sellable} ${p.unit || 'dona'}`);
+        }
         const price = toInt(p.sell_price);
         lines.push({ p, qty, price });
         subtotal += price * qty;
@@ -720,6 +968,10 @@ class DB {
       const discountAmount = discountType === 'percent' ? Math.round((subtotal * discountValue) / 100) : toInt(discountValue);
       if (discountAmount > subtotal) fail('Chegirma umumiy summadan katta');
       const finalTotal = subtotal - discountAmount;
+      // Savatcha ochilgandan keyin narx o'zgargan bo'lsa, kassir eski summa bilan pul olmasligi uchun
+      if (input.expected_total !== undefined && input.expected_total !== null && toInt(input.expected_total) !== finalTotal) {
+        fail(PRICE_CHANGED);
+      }
 
       const customer = input.customer_id ? this.getActiveCustomer(input.customer_id) : null;
 
@@ -792,8 +1044,9 @@ class DB {
       if (balanceUsed > 0) insPayment.run(saleId, 'balance', balanceUsed);
       if (debt > 0) insPayment.run(saleId, 'debt', debt);
 
-      // FEFO: avval yaroqlilik muddati eng yaqin partiyadan sotiladi
+      // FEFO: avval yaroqlilik muddati eng yaqin partiyadan sotiladi; muddati o'tganlar sotilmaydi
       const getBatches = this.db.prepare(`SELECT * FROM product_batches WHERE product_id = ? AND remaining > 0
+          AND (expiry_date IS NULL OR expiry_date >= date('now', 'localtime'))
         ORDER BY (expiry_date IS NULL), expiry_date, id`);
       const takeBatch = this.db.prepare('UPDATE product_batches SET remaining = remaining - ? WHERE id = ?');
       const insItem = this.db.prepare(`INSERT INTO sale_items (sale_id, product_id, batch_id, quantity, price, cost_price, total)
@@ -843,7 +1096,8 @@ class DB {
     const [from, to] = range(filters);
     let where = 'WHERE date(s.created_at) BETWEEN ? AND ?';
     const params = [from, to];
-    if (filters.status) { where += ' AND s.status = ?'; params.push(filters.status); }
+    if (filters.status === 'returned') where += ' AND s.returned_amount > 0';
+    else if (filters.status) { where += ' AND s.status = ?'; params.push(filters.status); }
     if (filters.customer_id) { where += ' AND s.customer_id = ?'; params.push(filters.customer_id); }
     if (filters.onlyDebt) where += ' AND s.debt_amount > 0';
     const q = opt(filters.search);
@@ -864,43 +1118,101 @@ class DB {
     `).get(id);
     if (!sale) return null;
     sale.items = this.db.prepare(`
-      SELECT si.product_id, p.name AS product_name, p.code, p.brand, p.flavor, p.weight, p.unit, si.price,
-        SUM(si.quantity) AS quantity, SUM(si.total) AS total, SUM(si.cost_price * si.quantity) AS cost
+      SELECT si.product_id, p.name AS product_name, p.code, p.brand, p.flavor, p.weight, p.unit, p.image, si.price,
+        SUM(si.quantity) AS quantity, SUM(si.returned_qty) AS returned_qty, SUM(si.total) AS total,
+        SUM(si.cost_price * si.quantity) AS cost
       FROM sale_items si JOIN products p ON p.id = si.product_id
       WHERE si.sale_id = ? GROUP BY si.product_id, si.price ORDER BY MIN(si.id)
     `).all(id);
     sale.payments = this.db.prepare('SELECT method, amount FROM sale_payments WHERE sale_id = ? ORDER BY id').all(id);
+    sale.returns = this.db.prepare('SELECT * FROM sale_returns WHERE sale_id = ? ORDER BY id').all(id);
+    sale.ratio = sale.total > 0 ? sale.final_total / sale.total : 0;
     return sale;
   }
 
+  // Butun sotuvni qaytarish (oldingi API bilan moslik uchun)
   refundSale(id, options = {}) {
+    const items = this.db.prepare('SELECT product_id, SUM(quantity - returned_qty) AS qty FROM sale_items WHERE sale_id = ? GROUP BY product_id').all(id);
+    return this.returnSale(id, { ...options, items: items.filter((i) => i.qty > 0).map((i) => ({ product_id: i.product_id, quantity: i.qty })) });
+  }
+
+  /**
+   * Qisman yoki to'liq qaytarish.
+   * Qaytariladigan summa chegirma ulushiga mutanosib hisoblanadi.
+   * Pul tartibi: avval mijoz hisobidan yechilgan / qarzga yozilgan qism mijoz hisobiga qaytadi,
+   * qolgani naqd beriladi (yoki to_balance bo'lsa mijoz hisobiga yoziladi).
+   */
+  returnSale(id, input = {}) {
     return this.db.transaction(() => {
       const sale = this.db.prepare('SELECT * FROM sales WHERE id = ?').get(id);
       if (!sale) fail('Sotuv topilmadi');
-      if (sale.status !== 'completed') fail('Bu sotuv allaqachon qaytarilgan');
+      if (sale.status !== 'completed') fail("Bu sotuv to'liq qaytarilgan");
+      const req = Array.isArray(input.items) ? input.items : [];
+      const wanted = new Map();
+      req.forEach((it) => {
+        const q = toInt(it.quantity);
+        if (q < 0) fail("Miqdor noto'g'ri");
+        if (q > 0) wanted.set(Number(it.product_id), (wanted.get(Number(it.product_id)) || 0) + q);
+      });
+      if (!wanted.size) fail('Qaytariladigan mahsulotni tanlang');
 
-      const ts = now();
-      const items = this.db.prepare('SELECT * FROM sale_items WHERE sale_id = ?').all(id);
-      const restoreStock = this.db.prepare('UPDATE products SET stock = stock + ?, updated_at = ? WHERE id = ?');
-      const restoreBatch = this.db.prepare('UPDATE product_batches SET remaining = remaining + ? WHERE id = ?');
-      items.forEach((it) => {
-        restoreStock.run(it.quantity, ts, it.product_id);
-        if (it.batch_id) restoreBatch.run(it.quantity, it.batch_id);
+      const rows = this.db.prepare('SELECT si.*, p.name FROM sale_items si JOIN products p ON p.id = si.product_id WHERE si.sale_id = ? ORDER BY si.id DESC').all(id);
+      const ratio = sale.total > 0 ? sale.final_total / sale.total : 0;
+      const picks = [];
+      wanted.forEach((qty, pid) => {
+        const own = rows.filter((r) => r.product_id === pid);
+        if (!own.length) fail('Bu mahsulot ushbu sotuvda yo\'q');
+        const available = own.reduce((s, r) => s + r.quantity - r.returned_qty, 0);
+        if (qty > available) fail(`"${own[0].name}": qaytarish mumkin bo'lgan miqdor ${available}`);
+        let rest = qty;
+        own.forEach((r) => {
+          const n = Math.min(rest, r.quantity - r.returned_qty);
+          if (n > 0) { picks.push({ row: r, qty: n }); rest -= n; }
+        });
       });
 
-      let refundCash = toInt(sale.paid_amount);
+      const allLeft = rows.reduce((s, r) => s + r.quantity - r.returned_qty, 0);
+      const pickedQty = picks.reduce((s, x) => s + x.qty, 0);
+      const isFull = pickedQty === allLeft;
+      const remainingValue = toInt(sale.final_total) - toInt(sale.returned_amount);
+      let amount = Math.round(picks.reduce((s, x) => s + x.row.price * x.qty, 0) * ratio);
+      if (isFull || amount > remainingValue) amount = remainingValue; // yaxlitlash qoldig'i qolmasin
+      const cost = picks.reduce((s, x) => s + x.row.cost_price * x.qty, 0);
+
+      // Pulni taqsimlash
+      const chargedLeft = Math.max(0, toInt(sale.balance_used) + toInt(sale.debt_amount) - toInt(sale.returned_to_account));
+      let toAccount = sale.customer_id ? Math.min(amount, chargedLeft) : 0;
+      let cash = amount - toAccount;
+      let cashToBalance = 0;
+      if (input.to_balance && sale.customer_id && cash > 0) { cashToBalance = cash; cash = 0; }
+
+      const ts = now();
+      const number = this.nextNumber('sale_returns', 'Q');
+      const returnId = Number(this.db.prepare(`INSERT INTO sale_returns (return_number, sale_id, amount, cost, to_account, cash_back, note, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(number, id, amount, cost, toAccount + cashToBalance, cash, opt(input.note), ts).lastInsertRowid);
+
+      const insItem = this.db.prepare(`INSERT INTO sale_return_items (return_id, sale_item_id, product_id, quantity, amount, cost) VALUES (?, ?, ?, ?, ?, ?)`);
+      const markRow = this.db.prepare('UPDATE sale_items SET returned_qty = returned_qty + ? WHERE id = ?');
+      const restoreStock = this.db.prepare('UPDATE products SET stock = stock + ?, updated_at = ? WHERE id = ?');
+      const restoreBatch = this.db.prepare('UPDATE product_batches SET remaining = remaining + ? WHERE id = ?');
+      picks.forEach(({ row, qty }) => {
+        insItem.run(returnId, row.id, row.product_id, qty, Math.round(row.price * qty * ratio), row.cost_price * qty);
+        markRow.run(qty, row.id);
+        restoreStock.run(qty, ts, row.product_id);
+        if (row.batch_id) restoreBatch.run(qty, row.batch_id);
+      });
+
       if (sale.customer_id) {
-        const back = toInt(sale.balance_used) + toInt(sale.debt_amount);
-        if (back > 0) this.addCustomerTx(sale.customer_id, 'refund', back, null, id, `Qaytarish ${sale.sale_number}`);
-        if (options.to_balance && refundCash > 0) {
-          this.addCustomerTx(sale.customer_id, 'refund', refundCash, null, id, `Qaytarish ${sale.sale_number}: to'langan pul hisobga`);
-          refundCash = 0;
-        }
+        if (toAccount > 0) this.addCustomerTx(sale.customer_id, 'refund', toAccount, null, id, `Qaytarish ${number} (${sale.sale_number})`);
+        if (cashToBalance > 0) this.addCustomerTx(sale.customer_id, 'refund', cashToBalance, null, id, `Qaytarish ${number}: to'langan pul hisobga`);
       }
 
-      this.db.prepare("UPDATE sales SET status = 'refunded', refunded_at = ?, refund_cash = ? WHERE id = ?").run(ts, refundCash, id);
-      this.log('REFUND', 'sale', id, `Qaytarish ${sale.sale_number}: ${fmt(sale.final_total)}${refundCash ? `, naqd qaytarildi ${fmt(refundCash)}` : ''}`);
-      return { refund_cash: refundCash };
+      this.db.prepare(`UPDATE sales SET returned_amount = returned_amount + ?, returned_to_account = returned_to_account + ?,
+          refund_cash = refund_cash + ?, refunded_at = ?, status = ? WHERE id = ?`)
+        .run(amount, toAccount, cash, ts, isFull ? 'refunded' : 'completed', id);
+
+      this.log('REFUND', 'sale', id, `${isFull ? "To'liq" : 'Qisman'} qaytarish ${number} (${sale.sale_number}): ${pickedQty} dona, ${fmt(amount)}${cash ? `, naqd berildi ${fmt(cash)}` : ''}`);
+      return { return_number: number, amount, refund_cash: cash, to_account: toAccount + cashToBalance, full: isFull };
     })();
   }
 
@@ -917,13 +1229,13 @@ class DB {
         SELECT date(created_at), method, amount FROM customer_transactions
           WHERE type IN ('deposit','withdraw') AND method IN ('cash','card','click','payme') AND date(created_at) BETWEEN @from AND @to
         UNION ALL
-        SELECT date(refunded_at), 'cash', -refund_cash FROM sales
-          WHERE status = 'refunded' AND refund_cash > 0 AND date(refunded_at) BETWEEN @from AND @to
+        SELECT date(created_at), 'cash', -cash_back FROM sale_returns
+          WHERE cash_back > 0 AND date(created_at) BETWEEN @from AND @to
       ) GROUP BY d, method
     `).all({ from, to });
     const debts = this.db.prepare(`
       SELECT date(created_at) AS d, SUM(debt_amount) AS debt FROM sales
-      WHERE status = 'completed' AND debt_amount > 0 AND date(created_at) BETWEEN ? AND ? GROUP BY d
+      WHERE debt_amount > 0 AND date(created_at) BETWEEN ? AND ? GROUP BY d
     `).all(from, to);
 
     const byDate = new Map();
@@ -944,10 +1256,11 @@ class DB {
   getDashboardStats() {
     const today = todayStr();
     const monthStart = `${today.slice(0, 8)}01`;
-    const salesAgg = this.db.prepare(`SELECT COUNT(*) AS count, COALESCE(SUM(final_total), 0) AS revenue,
-      COALESCE(SUM(debt_amount), 0) AS debt FROM sales WHERE status = 'completed' AND date(created_at) BETWEEN ? AND ?`);
-    const costAgg = this.db.prepare(`SELECT COALESCE(SUM(si.cost_price * si.quantity), 0) AS cost
-      FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.status = 'completed' AND date(s.created_at) BETWEEN ? AND ?`);
+    const salesAgg = this.db.prepare(`SELECT COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS count,
+      COALESCE(SUM(final_total - returned_amount), 0) AS revenue,
+      COALESCE(SUM(debt_amount), 0) AS debt FROM sales WHERE date(created_at) BETWEEN ? AND ?`);
+    const costAgg = this.db.prepare(`SELECT COALESCE(SUM(${COST_EXPR}), 0) AS cost
+      FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE date(s.created_at) BETWEEN ? AND ?`);
     const period = (from) => {
       const s = salesAgg.get(from, today);
       const { cost } = costAgg.get(from, today);
@@ -958,30 +1271,33 @@ class DB {
       SELECT COUNT(*) AS products,
         COALESCE(SUM(CASE WHEN stock > 0 THEN stock * cost_price END), 0) AS stock_value,
         COALESCE(SUM(CASE WHEN stock > 0 THEN stock * sell_price END), 0) AS retail_value,
-        COALESCE(SUM(CASE WHEN stock <= min_stock THEN 1 ELSE 0 END), 0) AS low_stock,
-        COALESCE(SUM(CASE WHEN stock <= 0 THEN 1 ELSE 0 END), 0) AS out_of_stock
-      FROM products WHERE is_active = 1
+        COALESCE(SUM(CASE WHEN sellable <= min_stock THEN 1 ELSE 0 END), 0) AS low_stock,
+        COALESCE(SUM(CASE WHEN sellable <= 0 THEN 1 ELSE 0 END), 0) AS out_of_stock
+      FROM (SELECT p.*, p.stock - ${EXPIRED_QTY} AS sellable FROM products p WHERE p.is_active = 1)
     `).get();
+    const monthLoss = this.db.prepare(`SELECT COALESCE(SUM(-quantity * cost_price), 0) AS loss FROM stock_adjustments
+      WHERE quantity < 0 AND date(created_at) BETWEEN ? AND ?`).get(monthStart, today).loss;
     const expiring = this.getExpiringProducts();
     inventory.expiring = expiring.filter((b) => b.days_left >= 0).length;
     inventory.expired = expiring.filter((b) => b.days_left < 0).length;
 
     const topProducts = this.db.prepare(`
-      SELECT p.id, p.name, p.brand, p.weight, p.flavor, SUM(si.quantity) AS qty, SUM(${REVENUE_EXPR}) AS revenue
+      SELECT p.id, p.name, p.brand, p.weight, p.flavor, p.image, SUM(${NET_QTY}) AS qty, SUM(${REVENUE_EXPR}) AS revenue
       FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN products p ON p.id = si.product_id
-      WHERE s.status = 'completed' AND date(s.created_at) BETWEEN ? AND ?
-      GROUP BY p.id ORDER BY revenue DESC LIMIT 6
+      WHERE date(s.created_at) BETWEEN ? AND ?
+      GROUP BY p.id HAVING qty > 0 ORDER BY revenue DESC LIMIT 6
     `).all(monthStart, today);
 
     const recentSales = this.db.prepare(`
-      SELECT s.id, s.sale_number, s.final_total, s.debt_amount, s.created_at, c.name AS customer_name
+      SELECT s.id, s.sale_number, s.final_total, s.returned_amount, s.debt_amount, s.created_at, c.name AS customer_name
       FROM sales s LEFT JOIN customers c ON c.id = s.customer_id
       WHERE s.status = 'completed' ORDER BY s.id DESC LIMIT 8
     `).all();
 
     const from = shiftDate(today, -13);
-    const dailyRows = this.db.prepare(`SELECT date(created_at) AS d, COUNT(*) AS count, SUM(final_total) AS revenue
-      FROM sales WHERE status = 'completed' AND date(created_at) BETWEEN ? AND ? GROUP BY d`).all(from, today);
+    const dailyRows = this.db.prepare(`SELECT date(created_at) AS d, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS count,
+      SUM(final_total - returned_amount) AS revenue
+      FROM sales WHERE date(created_at) BETWEEN ? AND ? GROUP BY d`).all(from, today);
     const map = new Map(dailyRows.map((r) => [r.d, r]));
     const daily = [];
     for (let i = 13; i >= 0; i -= 1) {
@@ -994,7 +1310,7 @@ class DB {
       today: period(today),
       month: period(monthStart),
       cashToday: this.getCashflow({ dateFrom: today, dateTo: today }).totals.total,
-      inventory,
+      inventory: { ...inventory, month_loss: monthLoss },
       customers: this.getCustomerSummary(),
       topProducts,
       recentSales,
@@ -1005,34 +1321,40 @@ class DB {
   getSalesReport(filters = {}) {
     const [from, to] = range(filters);
     return this.db.prepare(`
-      SELECT date(s.created_at) AS date, COUNT(*) AS sales_count, SUM(s.final_total) AS revenue,
-        SUM(s.total - s.final_total) AS discount, SUM(s.debt_amount) AS debt,
-        SUM((SELECT COALESCE(SUM(cost_price * quantity), 0) FROM sale_items WHERE sale_id = s.id)) AS cost
-      FROM sales s WHERE s.status = 'completed' AND date(s.created_at) BETWEEN ? AND ?
+      SELECT date(s.created_at) AS date, SUM(CASE WHEN s.status = 'completed' THEN 1 ELSE 0 END) AS sales_count,
+        SUM(s.final_total - s.returned_amount) AS revenue, SUM(s.returned_amount) AS returned,
+        SUM(CASE WHEN s.status = 'completed' THEN s.total - s.final_total ELSE 0 END) AS discount, SUM(s.debt_amount) AS debt,
+        SUM((SELECT COALESCE(SUM(cost_price * (quantity - returned_qty)), 0) FROM sale_items WHERE sale_id = s.id)) AS cost
+      FROM sales s WHERE date(s.created_at) BETWEEN ? AND ?
       GROUP BY date(s.created_at) ORDER BY date DESC
     `).all(from, to).map((r) => ({ ...r, profit: r.revenue - r.cost }));
+  }
+
+  getLossReport(filters = {}) {
+    const [from, to] = range(filters);
+    return this.getAdjustments({ dateFrom: from, dateTo: to });
   }
 
   getProductsReport(filters = {}) {
     const [from, to] = range(filters);
     return this.db.prepare(`
-      SELECT p.id, p.code, p.name, p.brand, p.weight, p.flavor, p.unit, SUM(si.quantity) AS qty,
-        SUM(${REVENUE_EXPR}) AS revenue, SUM(si.cost_price * si.quantity) AS cost
+      SELECT p.id, p.code, p.name, p.brand, p.weight, p.flavor, p.unit, SUM(${NET_QTY}) AS qty,
+        SUM(${REVENUE_EXPR}) AS revenue, SUM(${COST_EXPR}) AS cost
       FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN products p ON p.id = si.product_id
-      WHERE s.status = 'completed' AND date(s.created_at) BETWEEN ? AND ?
-      GROUP BY p.id ORDER BY revenue DESC
+      WHERE date(s.created_at) BETWEEN ? AND ?
+      GROUP BY p.id HAVING qty > 0 ORDER BY revenue DESC
     `).all(from, to).map((r) => ({ ...r, profit: r.revenue - r.cost }));
   }
 
   getCategoriesReport(filters = {}) {
     const [from, to] = range(filters);
     return this.db.prepare(`
-      SELECT COALESCE(pc.name, c.name, 'Kategoriyasiz') AS name, SUM(si.quantity) AS qty,
-        SUM(${REVENUE_EXPR}) AS revenue, SUM(si.cost_price * si.quantity) AS cost
+      SELECT COALESCE(pc.name, c.name, 'Kategoriyasiz') AS name, SUM(${NET_QTY}) AS qty,
+        SUM(${REVENUE_EXPR}) AS revenue, SUM(${COST_EXPR}) AS cost
       FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN products p ON p.id = si.product_id
       LEFT JOIN categories c ON c.id = p.category_id LEFT JOIN categories pc ON pc.id = c.parent_id
-      WHERE s.status = 'completed' AND date(s.created_at) BETWEEN ? AND ?
-      GROUP BY 1 ORDER BY revenue DESC
+      WHERE date(s.created_at) BETWEEN ? AND ?
+      GROUP BY 1 HAVING qty > 0 ORDER BY revenue DESC
     `).all(from, to).map((r) => ({ ...r, profit: r.revenue - r.cost }));
   }
 
@@ -1093,22 +1415,36 @@ class DB {
   async restoreBackup(filePath) {
     let probe = null;
     let valid = false;
+    let version = 0;
     try {
       probe = new Database(filePath, { readonly: true, fileMustExist: true });
-      valid = Boolean(probe.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'products'").get());
+      valid = Boolean(probe.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'products'").get())
+        && probe.pragma('integrity_check', { simple: true }) === 'ok';
+      version = probe.pragma('user_version', { simple: true });
     } catch (err) {
       valid = false;
     } finally {
       if (probe) probe.close();
     }
     if (!valid) fail("Bu fayl OxygenGym zaxira nusxasi emas yoki buzilgan");
+    if (version > SCHEMA_VERSION) fail('Bu nusxa dasturning yangiroq versiyasida olingan. Avval dasturni yangilang');
 
     fs.mkdirSync(this.backupDir, { recursive: true });
-    await this.db.backup(path.join(this.backupDir, `before-restore-${Date.now()}.db`));
-    this.close();
-    ['-wal', '-shm'].forEach((ext) => { if (fs.existsSync(this.dbPath + ext)) fs.unlinkSync(this.dbPath + ext); });
-    fs.copyFileSync(filePath, this.dbPath);
-    this.open();
+    const safety = path.join(this.backupDir, `before-restore-${Date.now()}.db`);
+    await this.db.backup(safety);
+    const swap = (source) => {
+      this.close();
+      ['-wal', '-shm'].forEach((ext) => { if (fs.existsSync(this.dbPath + ext)) fs.unlinkSync(this.dbPath + ext); });
+      fs.copyFileSync(source, this.dbPath);
+      this.open();
+    };
+    try {
+      swap(filePath);
+    } catch (err) {
+      // Tiklash yoki migratsiya muvaffaqiyatsiz bo'lsa, oldingi holatga qaytamiz
+      swap(safety);
+      fail(`Tiklab bo'lmadi: ${err.message}. Oldingi ma'lumotlar saqlab qolindi`);
+    }
     this.log('RESTORE', 'system', null, `Zaxira nusxadan tiklandi: ${filePath}`);
     return true;
   }

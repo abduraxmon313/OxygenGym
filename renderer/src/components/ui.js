@@ -1,6 +1,15 @@
 import React from 'react';
-import { Search } from 'lucide-react';
+import { Package, Search } from 'lucide-react';
 import { DATE_PRESETS } from '../lib/format';
+
+export function ProductThumb({ product, size }) {
+  const px = size === 'sm' ? 15 : size === 'lg' ? 22 : 18;
+  return (
+    <div className={`thumb${size ? ` ${size}` : ''}`}>
+      {product && product.image ? <img src={product.image} alt="" loading="lazy" /> : <Package size={px} strokeWidth={1.6} />}
+    </div>
+  );
+}
 
 export function PageHeader({ title, subtitle, actions }) {
   return (
@@ -31,6 +40,12 @@ export function StatCard({ label, value, unit, hint, icon: Icon, tone = 'neutral
 
 export function Pill({ tone = 'neutral', dot = true, children }) {
   return <span className={`pill pill-${tone}${dot ? '' : ' no-dot'}`}>{children}</span>;
+}
+
+export function SaleStatus({ sale }) {
+  if (sale.status !== 'completed') return <Pill tone="danger">Qaytarilgan</Pill>;
+  if (sale.returned_amount > 0) return <Pill tone="warning">Qisman qaytarilgan</Pill>;
+  return <Pill tone="success">Yakunlangan</Pill>;
 }
 
 export function EmptyState({ icon: Icon, title, text, action }) {

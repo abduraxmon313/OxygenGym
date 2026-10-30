@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
-  AlertTriangle, Banknote, Boxes, CalendarClock, ChevronRight, HandCoins, Package, Receipt, ShoppingCart, TrendingUp, Wallet,
+  AlertTriangle, Banknote, Boxes, CalendarClock, ChevronRight, HandCoins, Package, PackageMinus, Receipt, ShoppingCart, TrendingUp, Wallet,
 } from 'lucide-react';
-import { EmptyState, PageHeader, StatCard } from '../components/ui';
+import { EmptyState, PageHeader, ProductThumb, StatCard } from '../components/ui';
+import { chartColors, useTheme } from '../lib/theme';
 import SaleDetail from '../components/SaleDetail';
 import { compactMoney, fmtTime, longDate, money, productMeta, shortDay, som } from '../lib/format';
 
@@ -21,6 +22,8 @@ function ChartTooltip({ active, payload }) {
 
 export default function Dashboard({ navigate }) {
   const [stats, setStats] = useState(null);
+  const { theme } = useTheme();
+  const colors = chartColors(theme);
   const [saleId, setSaleId] = useState(null);
 
   const load = useCallback(async () => {
@@ -84,15 +87,15 @@ export default function Dashboard({ navigate }) {
                 <AreaChart data={chartData} margin={{ top: 10, right: 8, left: 8, bottom: 0 }}>
                   <defs>
                     <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#2563eb" stopOpacity={0.18} />
-                      <stop offset="100%" stopColor="#2563eb" stopOpacity={0} />
+                      <stop offset="0%" stopColor={colors.line} stopOpacity={theme === 'dark' ? 0.28 : 0.18} />
+                      <stop offset="100%" stopColor={colors.line} stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid stroke="#eef0f3" vertical={false} />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11.5, fill: '#98a2b3' }} interval="preserveStartEnd" />
-                  <YAxis tickLine={false} axisLine={false} width={64} tick={{ fontSize: 11.5, fill: '#98a2b3' }} tickFormatter={compactMoney} />
-                  <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#d0d5dd' }} />
-                  <Area type="monotone" dataKey="revenue" stroke="#2563eb" strokeWidth={2} fill="url(#rev)" activeDot={{ r: 4 }} />
+                  <CartesianGrid stroke={colors.grid} vertical={false} />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11.5, fill: colors.tick }} interval="preserveStartEnd" />
+                  <YAxis tickLine={false} axisLine={false} width={64} tick={{ fontSize: 11.5, fill: colors.tick }} tickFormatter={compactMoney} />
+                  <Tooltip content={<ChartTooltip />} cursor={{ stroke: colors.cursor }} />
+                  <Area type="monotone" dataKey="revenue" stroke={colors.line} strokeWidth={2} fill="url(#rev)" activeDot={{ r: 4 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -119,6 +122,10 @@ export default function Dashboard({ navigate }) {
                   {inventory.expiring} / {inventory.expired} <ChevronRight size={14} className="muted" />
                 </span>
               </div>
+              <div className="kv">
+                <span className="kv-label"><PackageMinus size={16} />Shu oy hisobdan chiqarilgan</span>
+                <span className={`kv-value ${inventory.month_loss ? 'text-danger' : ''}`}>{som(inventory.month_loss)}</span>
+              </div>
             </div>
             {alertsTotal === 0 && <div className="card-body muted" style={{ fontSize: 12.5, paddingTop: 0 }}>Ombor bo'yicha ogohlantirish yo'q.</div>}
           </div>
@@ -136,7 +143,12 @@ export default function Dashboard({ navigate }) {
                   <tbody>
                     {stats.topProducts.map((p) => (
                       <tr key={p.id}>
-                        <td><div className="cell-title">{p.name}</div><div className="cell-sub">{productMeta(p) || '—'}</div></td>
+                        <td>
+                          <div className="cell-product">
+                            <ProductThumb product={p} size="sm" />
+                            <div><div className="cell-title">{p.name}</div><div className="cell-sub">{productMeta(p) || '—'}</div></div>
+                          </div>
+                        </td>
                         <td className="num">{p.qty}</td>
                         <td className="num strong">{money(p.revenue)}</td>
                       </tr>
@@ -164,7 +176,7 @@ export default function Dashboard({ navigate }) {
                         <td className="mono">{s.sale_number}</td>
                         <td className="secondary">{fmtTime(s.created_at)}</td>
                         <td>{s.customer_name || <span className="muted">Mijozsiz</span>}</td>
-                        <td className="num strong">{money(s.final_total)}{s.debt_amount > 0 && <div className="cell-sub text-danger">qarz {money(s.debt_amount)}</div>}</td>
+                        <td className="num strong">{money(s.final_total - s.returned_amount)}{s.debt_amount > 0 && <div className="cell-sub text-danger">qarz {money(s.debt_amount)}</div>}</td>
                       </tr>
                     ))}
                   </tbody>

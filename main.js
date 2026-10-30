@@ -137,6 +137,10 @@ handle('products:getById', (id) => db.getProductById(id));
 handle('products:create', (p) => db.createProduct(p));
 handle('products:update', (id, p) => db.updateProduct(id, p));
 handle('products:remove', (id) => db.deleteProduct(id));
+handle('products:archived', () => db.getArchivedProducts());
+handle('products:restore', (id) => db.restoreProduct(id));
+handle('products:writeOff', (d) => db.writeOffStock(d));
+handle('products:correctStock', (d) => db.correctStock(d));
 handle('products:nextCode', () => db.nextProductCode());
 handle('products:lowStock', () => db.getLowStockProducts());
 handle('products:expiring', (days) => db.getExpiringProducts(days));
@@ -147,12 +151,15 @@ handle('products:brands', () => db.getBrands());
 handle('stock:receive', (r) => db.receiveStock(r));
 handle('stock:receipts', (f) => db.getStockReceipts(f));
 handle('stock:receiptById', (id) => db.getStockReceiptById(id));
+handle('stock:cancelReceipt', (id, d) => db.cancelReceipt(id, d));
+handle('stock:adjustments', (f) => db.getAdjustments(f));
 
 // ===== SALES =====
 handle('sales:create', (s) => db.createSale(s));
 handle('sales:list', (f) => db.getSales(f));
 handle('sales:getById', (id) => db.getSaleById(id));
 handle('sales:refund', (id, opts) => db.refundSale(id, opts));
+handle('sales:return', (id, d) => db.returnSale(id, d));
 
 // ===== CUSTOMERS =====
 handle('customers:list', (f) => db.getCustomers(f));
@@ -160,6 +167,7 @@ handle('customers:getById', (id) => db.getCustomerById(id));
 handle('customers:create', (c) => db.createCustomer(c));
 handle('customers:update', (id, c) => db.updateCustomer(id, c));
 handle('customers:remove', (id) => db.deleteCustomer(id));
+handle('customers:restore', (id) => db.restoreCustomer(id));
 handle('customers:summary', () => db.getCustomerSummary());
 handle('customers:deposit', (id, d) => db.customerDeposit(id, d));
 handle('customers:withdraw', (id, d) => db.customerWithdraw(id, d));
@@ -171,6 +179,7 @@ handle('reports:sales', (f) => db.getSalesReport(f));
 handle('reports:products', (f) => db.getProductsReport(f));
 handle('reports:categories', (f) => db.getCategoriesReport(f));
 handle('reports:cashflow', (f) => db.getCashflow(f));
+handle('reports:losses', (f) => db.getLossReport(f));
 
 // ===== SETTINGS & AUDIT =====
 handle('settings:get', () => db.getSettings());

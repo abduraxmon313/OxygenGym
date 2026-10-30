@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
+import { ThemeContext, applyTheme, initialTheme, toastStyle } from './lib/theme';
 import Sidebar from './components/Sidebar';
 import { ConfirmProvider } from './components/ConfirmDialog';
 import Dashboard from './pages/Dashboard';
@@ -57,6 +58,7 @@ export default function App() {
   const [alertCount, setAlertCount] = useState(0);
   const [settings, setSettings] = useState({});
   const [info, setInfo] = useState({});
+  const [theme, setThemeState] = useState(initialTheme);
   const downloading = useRef(false);
 
   const refreshAlerts = useCallback(async () => {
@@ -77,9 +79,6 @@ export default function App() {
     reloadSettings();
     window.api.app.info().then(setInfo).catch(() => {});
     const timer = setInterval(refreshAlerts, 60000);
-    // Saqlangan temani yuklash
-    const savedTheme = localStorage.getItem('oxygengym-theme');
-    if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
     return () => clearInterval(timer);
   }, [refreshAlerts, reloadSettings]);
 
@@ -110,8 +109,13 @@ export default function App() {
   }, []);
 
   const Page = PAGES[page] || Dashboard;
+  const themeValue = useMemo(() => ({
+    theme,
+    setTheme: (t) => { applyTheme(t); setThemeState(t); },
+  }), [theme]);
 
   return (
+    <ThemeContext.Provider value={themeValue}>
     <ConfirmProvider>
       <div className="app">
         <Sidebar page={page} onNavigate={setPage} alertCount={alertCount} shopName={settings.shopName} version={info.version} />
@@ -130,15 +134,12 @@ export default function App() {
         gutter={10}
         toastOptions={{
           duration: 3500,
-          style: {
-            background: '#fff', color: '#101828', border: '1px solid #e4e7ec', borderRadius: 10,
-            boxShadow: '0 12px 16px -4px rgba(16,24,40,.08), 0 4px 6px -2px rgba(16,24,40,.03)',
-            fontSize: 13.5, padding: '10px 14px', maxWidth: 420,
-          },
-          success: { iconTheme: { primary: '#079455', secondary: '#fff' } },
-          error: { duration: 5000, iconTheme: { primary: '#d92d20', secondary: '#fff' } },
+          style: toastStyle(theme),
+          success: { iconTheme: { primary: '#059669', secondary: '#fff' } },
+          error: { duration: 5000, iconTheme: { primary: '#dc2626', secondary: '#fff' } },
         }}
       />
     </ConfirmProvider>
+    </ThemeContext.Provider>
   );
 }

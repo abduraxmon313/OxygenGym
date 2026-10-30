@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
-import { Minus, PackageSearch, Plus, ShoppingCart, Trash2, UserRound, X } from 'lucide-react';
-import { EmptyState, Pill, SearchInput, Segmented } from '../components/ui';
+import { Minus, Package, PackageSearch, Plus, ShoppingCart, Trash2, UserRound, X } from 'lucide-react';
+import { EmptyState, Pill, ProductThumb, SearchInput, Segmented } from '../components/ui';
 import MoneyInput from '../components/MoneyInput';
 import CustomerPicker from '../components/CustomerPicker';
 import PaymentModal from '../components/PaymentModal';
@@ -9,9 +9,26 @@ import { useConfirm } from '../components/ConfirmDialog';
 import { balanceState, categoryLabel, initials, money, productMeta, som } from '../lib/format';
 
 function stockTone(p) {
-  if (p.stock <= 0) return 'danger';
-  if (p.stock <= p.min_stock) return 'warning';
+  if (p.sellable <= 0) return 'danger';
+  if (p.sellable <= p.min_stock) return 'warning';
   return 'neutral';
+}
+
+// Mahsulotlar qayta yuklanganda savatchadagi narx va qoldiqni yangilaymiz.
+// Arxivlangan yoki tugagan mahsulot savatchadan olib tashlanadi.
+function syncCart(cart, products) {
+  const byId = new Map(products.map((p) => [p.id, p]));
+  const notes = [];
+  const next = [];
+  cart.forEach((item) => {
+    const p = byId.get(item.product_id);
+    if (!p || p.sellable <= 0) { notes.push(`"${item.name}" savatchadan olib tashlandi`); return; }
+    const quantity = Math.min(item.quantity, p.sellable);
+    if (p.sell_price !== item.price) notes.push(`"${p.name}" narxi: ${money(item.price)} → ${money(p.sell_price)}`);
+    if (quantity < item.quantity) notes.push(`"${p.name}" miqdori ${quantity} ga kamaytirildi`);
+    next.push({ ...item, price: p.sell_price, stock: p.sellable, image: p.image, quantity });
+  });
+  return { next, notes };
 }
 
 export default function POS({ refreshAlerts, settings }) {
@@ -33,10 +50,21 @@ export default function POS({ refreshAlerts, settings }) {
       const [p, c] = await Promise.all([window.api.products.getAll(), window.api.products.categories()]);
       setProducts(p);
       setCategories(c);
+      return p;
     } catch (err) {
       toast.error(err.message);
+      return null;
     }
   }, []);
+
+  async function refreshCart() {
+    const fresh = await load();
+    if (!fresh) return cart;
+    const { next, notes } = syncCart(cart, fresh);
+    notes.forEach((n) => toast(n, { icon: '!', duration: 6000 }));
+    setCart(next);
+    return next;
+  }
   useEffect(() => { load(); }, [load]);
 
   const visible = useMemo(() => {
@@ -52,12 +80,15 @@ export default function POS({ refreshAlerts, settings }) {
   const chips = categories.filter((c) => c.product_count > 0);
 
   function add(p) {
-    if (p.stock <= 0) { toast.error(`"${p.name}" omborda qolmagan`); return; }
+    if (p.sellable <= 0) {
+      toast.error(p.expired_qty > 0 ? `"${p.name}": qolgan tovarning muddati o'tgan` : `"${p.name}" omborda qolmagan`);
+      return;
+    }
     const current = inCart[p.id] || 0;
-    if (current >= p.stock) { toast.error(`Omborda faqat ${p.stock} ${p.unit || 'dona'} bor`); return; }
+    if (current >= p.sellable) { toast.error(`Sotish mumkin: ${p.sellable} ${p.unit || 'dona'}`); return; }
     setCart((prev) => (current
       ? prev.map((i) => (i.product_id === p.id ? { ...i, quantity: i.quantity + 1 } : i))
-      : [...prev, { product_id: p.id, name: p.name, meta: productMeta(p), price: p.sell_price, stock: p.stock, unit: p.unit || 'dona', quantity: 1 }]));
+      : [...prev, { product_id: p.id, name: p.name, meta: productMeta(p), price: p.sell_price, stock: p.sellable, unit: p.unit || 'dona', image: p.image, quantity: 1 }]));
   }
 
   function setQty(id, raw) {
@@ -106,6 +137,11 @@ export default function POS({ refreshAlerts, settings }) {
     if (searchRef.current) searchRef.current.focus();
   }
 
+  function openPayment() {
+    // To'lov oynasi ochilishidan oldin narx va qoldiqlarni tekshiramiz
+    refreshCart().then((next) => { if (next.length) setPaying(true); });
+  }
+
   const cb = customer ? balanceState(customer.balance) : null;
 
   return (
@@ -147,14 +183,19 @@ export default function POS({ refreshAlerts, settings }) {
             ) : (
               <div className="product-grid">
                 {visible.map((p) => (
-                  <button key={p.id} type="button" className="tile" onClick={() => add(p)} disabled={p.stock <= 0}>
+                  <button key={p.id} type="button" className="tile" onClick={() => add(p)} disabled={p.sellable <= 0}>
                     {inCart[p.id] > 0 && <span className="tile-qty">{inCart[p.id]}</span>}
-                    <span className="tile-cat">{categoryLabel(p)}</span>
-                    <span className="tile-name">{p.name}</span>
-                    <span className="tile-meta">{productMeta(p) || `Kod ${p.code}`}</span>
-                    <span className="tile-foot">
-                      <span className="tile-price">{money(p.sell_price)}</span>
-                      <Pill tone={stockTone(p)}>{p.stock <= 0 ? 'Tugagan' : `${p.stock} ${p.unit || 'dona'}`}</Pill>
+                    <span className="tile-media">
+                      {p.image ? <img src={p.image} alt="" loading="lazy" /> : <Package size={28} strokeWidth={1.4} />}
+                    </span>
+                    <span className="tile-body">
+                      <span className="tile-cat">{categoryLabel(p)}</span>
+                      <span className="tile-name">{p.name}</span>
+                      <span className="tile-meta">{productMeta(p) || `Kod ${p.code}`}</span>
+                      <span className="tile-foot">
+                        <span className="tile-price">{money(p.sell_price)}</span>
+                        <Pill tone={stockTone(p)}>{p.sellable <= 0 ? (p.expired_qty > 0 ? "Muddati o'tgan" : 'Tugagan') : `${p.sellable} ${p.unit || 'dona'}`}</Pill>
+                      </span>
                     </span>
                   </button>
                 ))}
@@ -199,6 +240,7 @@ export default function POS({ refreshAlerts, settings }) {
               <EmptyState icon={ShoppingCart} title="Savatcha bo'sh" text="Mahsulot kartochkasini bosing yoki qidiruvda Enter bosing" />
             ) : cart.map((i) => (
               <div key={i.product_id} className="cart-line">
+                <ProductThumb product={i} size="sm" />
                 <div>
                   <div className="name">{i.name}</div>
                   {i.meta && <div className="meta">{i.meta}</div>}
@@ -237,7 +279,7 @@ export default function POS({ refreshAlerts, settings }) {
               {discountAmount > 0 && <div className="summary-row"><span>Chegirma</span><strong className="text-danger">−{som(discountAmount)}</strong></div>}
               <div className="summary-row total"><span>To'lov</span><strong>{som(total)}</strong></div>
             </div>
-            <button type="button" className="btn btn-primary btn-lg btn-block" disabled={!cart.length} onClick={() => setPaying(true)}>
+            <button type="button" className="btn btn-primary btn-lg btn-block" disabled={!cart.length} onClick={openPayment}>
               To'lovga o'tish
             </button>
           </div>
@@ -257,6 +299,7 @@ export default function POS({ refreshAlerts, settings }) {
           discountType={discountType}
           allowDebt={settings.allowDebt !== 'false'}
           onClose={() => setPaying(false)}
+          onStale={() => { setPaying(false); refreshCart(); }}
           onDone={finish}
         />
       )}

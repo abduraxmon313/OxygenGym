@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
-import { PackagePlus, Plus, Trash2 } from 'lucide-react';
+import { Ban, PackagePlus, Plus, Trash2 } from 'lucide-react';
 import Modal from '../components/Modal';
 import MoneyInput from '../components/MoneyInput';
 import ProductForm from '../components/ProductForm';
 import { useConfirm } from '../components/ConfirmDialog';
-import { DateRange, EmptyState, PageHeader, SearchInput } from '../components/ui';
+import { DateRange, EmptyState, PageHeader, Pill, SearchInput } from '../components/ui';
 import { daysAgo, fmtDate, fmtDateTime, isoDate, money, productMeta, som } from '../lib/format';
 
 function ReceiptForm({ products, categories, brands, defaultMinStock, onClose, onSaved, onProductCreated }) {
@@ -188,16 +188,53 @@ function ReceiptForm({ products, categories, brands, defaultMinStock, onClose, o
   );
 }
 
-function ReceiptView({ receiptId, onClose }) {
+function ReceiptView({ receiptId, onClose, onChanged }) {
   const [receipt, setReceipt] = useState(null);
-  useEffect(() => {
+  const confirm = useConfirm();
+  const load = useCallback(() => {
     window.api.stock.receiptById(receiptId).then(setReceipt).catch((err) => toast.error(err.message));
   }, [receiptId]);
+  useEffect(() => { load(); }, [load]);
   if (!receipt) return null;
+  const cancelled = receipt.status === 'cancelled';
+
+  async function cancel() {
+    const ok = await confirm({
+      title: 'Kirimni bekor qilish',
+      message: `${receipt.receipt_number} kirimidagi ${receipt.total_items} dona ombordan ayiriladi. Xato kiritilgan kirim uchun ishlating.`,
+      confirmText: 'Bekor qilish',
+      cancelText: 'Orqaga',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await window.api.stock.cancelReceipt(receipt.id, {});
+      toast.success('Kirim bekor qilindi');
+      load();
+      onChanged();
+    } catch (err) {
+      toast.error(err.message, { duration: 7000 });
+    }
+  }
+
   return (
     <Modal size="lg" title={`Kirim ${receipt.receipt_number}`} subtitle={fmtDateTime(receipt.created_at)} onClose={onClose}
-      footer={<button type="button" className="btn btn-secondary" onClick={onClose}>Yopish</button>}>
+      footer={(
+        <>
+          {!cancelled && (
+            <button type="button" className="btn btn-danger-outline left" onClick={cancel} disabled={!receipt.can_cancel}
+              title={receipt.can_cancel ? undefined : `Bu kirimdan ${receipt.used_qty} dona sotilgan yoki chiqarilgan`}>
+              <Ban size={16} />Kirimni bekor qilish
+            </button>
+          )}
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Yopish</button>
+        </>
+      )}>
       <div className="stack">
+        {cancelled && <div className="callout callout-danger"><span>Bu kirim {fmtDateTime(receipt.cancelled_at)} da bekor qilingan.</span></div>}
+        {!cancelled && !receipt.can_cancel && (
+          <div className="callout callout-info"><span>Bu kirimdan {receipt.used_qty} dona sotilgan yoki chiqarilgan, shuning uchun uni bekor qilib bo'lmaydi. Qoldiqni mahsulotning "Ombor holati" oynasidan tuzating.</span></div>
+        )}
         {receipt.notes && <div className="callout callout-info"><span>{receipt.notes}</span></div>}
         <div className="table-wrap">
           <table className="table table-sm">
@@ -251,7 +288,7 @@ export default function StockReceive({ refreshAlerts, settings }) {
   useEffect(() => { loadReceipts(); }, [loadReceipts]);
   useEffect(() => { loadCatalog(); }, [loadCatalog]);
 
-  const total = receipts.reduce((s, r) => s + r.total_amount, 0);
+  const total = receipts.filter((r) => r.status !== 'cancelled').reduce((s, r) => s + r.total_amount, 0);
 
   return (
     <>
@@ -269,20 +306,21 @@ export default function StockReceive({ refreshAlerts, settings }) {
             <EmptyState icon={PackagePlus} title="Bu davrda kirim yo'q" text="Mahsulot kelganda 'Yangi kirim' orqali qabul qiling" />
           ) : (
             <table className="table">
-              <thead><tr><th>Raqam</th><th>Sana</th><th>Izoh</th><th className="num">Pozitsiya</th><th className="num">Miqdor</th><th className="num">Summa</th></tr></thead>
+              <thead><tr><th>Raqam</th><th>Sana</th><th>Izoh</th><th className="num">Pozitsiya</th><th className="num">Miqdor</th><th className="num">Summa</th><th>Holat</th></tr></thead>
               <tbody>
                 {receipts.map((r) => (
-                  <tr key={r.id} className="clickable" onClick={() => setViewId(r.id)}>
+                  <tr key={r.id} className={`clickable${r.status === 'cancelled' ? ' dim' : ''}`} onClick={() => setViewId(r.id)}>
                     <td className="mono">{r.receipt_number}</td>
                     <td className="nowrap">{fmtDateTime(r.created_at)}</td>
                     <td className="secondary">{r.notes || '—'}</td>
                     <td className="num">{r.lines_count}</td>
                     <td className="num">{r.total_items}</td>
                     <td className="num strong">{money(r.total_amount)}</td>
+                    <td>{r.status === 'cancelled' ? <Pill tone="danger">Bekor qilingan</Pill> : <Pill tone="success">Qabul qilingan</Pill>}</td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot><tr><td colSpan={5}>Jami {receipts.length} ta kirim</td><td className="num">{som(total)}</td></tr></tfoot>
+              <tfoot><tr><td colSpan={5}>Jami {receipts.filter((r) => r.status !== 'cancelled').length} ta kirim</td><td className="num">{som(total)}</td><td /></tr></tfoot>
             </table>
           )}
         </div>
@@ -299,7 +337,7 @@ export default function StockReceive({ refreshAlerts, settings }) {
           onSaved={() => { setCreating(false); loadReceipts(); loadCatalog(); refreshAlerts(); }}
         />
       )}
-      {viewId && <ReceiptView receiptId={viewId} onClose={() => setViewId(null)} />}
+      {viewId && <ReceiptView receiptId={viewId} onClose={() => setViewId(null)} onChanged={() => { loadReceipts(); loadCatalog(); refreshAlerts(); }} />}
     </>
   );
 }

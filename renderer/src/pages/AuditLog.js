@@ -15,9 +15,12 @@ const ACTIONS = {
   PAYMENT_IN: { label: "To'lov qabul", tone: 'success' },
   PAYMENT_OUT: { label: 'Pul qaytarildi', tone: 'warning' },
   ADJUST: { label: 'Hisob tuzatildi', tone: 'warning' },
+  WRITEOFF: { label: 'Hisobdan chiqarildi', tone: 'danger' },
+  ADJUST_STOCK: { label: 'Qoldiq tuzatildi', tone: 'warning' },
+  RECEIVE_CANCEL: { label: 'Kirim bekor qilindi', tone: 'danger' },
   SETTINGS: { label: 'Sozlamalar', tone: 'neutral' },
   BACKUP: { label: 'Zaxira nusxa', tone: 'neutral' },
-  RESTORE: { label: 'Tiklash', tone: 'danger' },
+  RESTORE: { label: 'Tiklandi / qaytarildi', tone: 'primary' },
 };
 
 const ENTITIES = { sale: 'Sotuv', stock: 'Ombor', product: 'Mahsulot', customer: 'Mijoz', system: 'Tizim' };

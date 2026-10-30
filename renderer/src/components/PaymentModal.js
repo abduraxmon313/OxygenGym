@@ -19,7 +19,9 @@ const METHODS = [
  * 3) yetmagan qismi — mijoz tanlangan bo'lsa qarzga yoziladi
  * 4) ortiqcha naqd — qaytim beriladi yoki mijoz hisobiga yoziladi
  */
-export default function PaymentModal({ total, subtotal, customer, items, discount, discountType, allowDebt, onClose, onDone }) {
+export const PRICE_CHANGED_PREFIX = "Mahsulot narxi o'zgargan";
+
+export default function PaymentModal({ total, subtotal, customer, items, discount, discountType, allowDebt, onClose, onDone, onStale }) {
   const available = customer ? Math.max(0, Math.round(customer.balance)) : 0;
   const initialBalance = Math.min(available, total);
   const [useBalance, setUseBalance] = useState(initialBalance);
@@ -66,6 +68,7 @@ export default function PaymentModal({ total, subtotal, customer, items, discoun
         items: items.map((i) => ({ product_id: i.product_id, quantity: i.quantity })),
         discount,
         discount_type: discountType,
+        expected_total: total,
         customer_id: customer ? customer.id : null,
         balance_used: balanceUsed,
         payments: Object.fromEntries(METHODS.map((m) => [m.id, Number(amounts[m.id]) || 0])),
@@ -74,8 +77,9 @@ export default function PaymentModal({ total, subtotal, customer, items, discoun
       });
       onDone(result);
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err.message, { duration: 6000 });
       setBusy(false);
+      if (onStale && err.message.startsWith(PRICE_CHANGED_PREFIX)) onStale();
     }
   }
 
