@@ -1,6 +1,6 @@
 {
   "name": "oxygengym",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "OxygenGym — zal bari uchun savdo va ombor dasturi",
   "main": "main.js",
   "scripts": {

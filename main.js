@@ -68,6 +68,7 @@ function createWindow() {
   });
   mainWindow.on('closed', () => { mainWindow = null; });
   mainWindow.webContents.once('did-finish-load', () => {
+    mainWindow.webContents.executeJavaScript(`window.__OXYGENGYM_VERSION__=${JSON.stringify(app.getVersion())}`).catch(() => {});
     setTimeout(checkForUpdates, 5000);
   });
 }
