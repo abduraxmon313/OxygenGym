@@ -4,31 +4,25 @@ import { Download, FolderOpen, Moon, RefreshCw, Sun, Upload } from 'lucide-react
 import { Field, PageHeader } from '../components/ui';
 import { useConfirm } from '../components/ConfirmDialog';
 import { fileSize, fmtDateTime } from '../lib/format';
+import { useTheme } from '../lib/theme';
 
 function ThemeToggle() {
-  const [theme, setTheme] = useState(() => localStorage.getItem('oxygengym-theme') || 'light');
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('oxygengym-theme', theme);
-  }, [theme]);
-
+  const { theme, setTheme } = useTheme();
+  const options = [
+    { id: 'light', label: 'Kunduzgi', icon: Sun },
+    { id: 'dark', label: 'Tungi', icon: Moon },
+  ];
   return (
-    <div className="row" style={{ gap: 12 }}>
-      <button
-        type="button"
-        className={`btn ${theme === 'light' ? 'btn-primary' : 'btn-secondary'}`}
-        onClick={() => setTheme('light')}
-      >
-        <Sun size={16} />Kunduzgi rejim
-      </button>
-      <button
-        type="button"
-        className={`btn ${theme === 'dark' ? 'btn-primary' : 'btn-secondary'}`}
-        onClick={() => setTheme('dark')}
-      >
-        <Moon size={16} />Tungi rejim
-      </button>
+    <div className="theme-cards">
+      {options.map(({ id, label, icon: Icon }) => (
+        <button key={id} type="button" className={`theme-card ${id}${theme === id ? ' active' : ''}`} onClick={() => setTheme(id)}>
+          <div className="preview">
+            <div className="side" />
+            <div className="main"><div className="bar accent" /><div className="bar" /><div className="bar" /></div>
+          </div>
+          <div className="label"><Icon size={15} />{label}</div>
+        </button>
+      ))}
     </div>
   );
 }
@@ -188,7 +182,7 @@ export default function Settings({ settings, reloadSettings, appInfo }) {
             </div>
 
             <div className="settings-grid">
-              <div><h3>Ko'rinish</h3><p>Kunduzgi va tungi rejim. Tungi rejimda ko'zlar kamroq charchaydi.</p></div>
+              <div><h3>Ko'rinish</h3><p>Kunduzgi yoki tungi rejim. Tanlov darhol qo'llanadi va saqlanadi. Yon menyudagi "Sozlamalar" ostidan ham almashtirish mumkin.</p></div>
               <div className="stack-sm">
                 <ThemeToggle />
               </div>

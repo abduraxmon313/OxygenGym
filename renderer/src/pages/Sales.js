@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { HandCoins, Receipt, RotateCcw, TrendingUp } from 'lucide-react';
-import { DateRange, EmptyState, PageHeader, Pill, SearchInput, Segmented, StatCard } from '../components/ui';
+import { DateRange, EmptyState, PageHeader, SaleStatus, SearchInput, Segmented, StatCard } from '../components/ui';
 import SaleDetail from '../components/SaleDetail';
 import { fmtDateTime, isoDate, methodsText, money } from '../lib/format';
 
@@ -19,7 +19,7 @@ export default function Sales({ refreshAlerts }) {
         dateFrom: from,
         dateTo: to,
         search: query,
-        status: status === 'refunded' ? 'refunded' : status === 'all' ? undefined : 'completed',
+        status: status === 'returned' ? 'returned' : status === 'all' || status === 'debt' ? undefined : 'completed',
         onlyDebt: status === 'debt',
       }));
     } catch (err) {
@@ -33,13 +33,12 @@ export default function Sales({ refreshAlerts }) {
   }, [load]);
 
   const summary = useMemo(() => sales.reduce((s, x) => {
-    if (x.status === 'completed') {
-      s.count += 1;
-      s.revenue += x.final_total;
-      s.debt += x.debt_amount;
-    } else {
+    if (x.status === 'completed') s.count += 1;
+    s.revenue += x.final_total - x.returned_amount;
+    s.debt += x.debt_amount;
+    if (x.returned_amount > 0) {
       s.refunded += 1;
-      s.refundedSum += x.final_total;
+      s.refundedSum += x.returned_amount;
     }
     return s;
   }, { count: 0, revenue: 0, debt: 0, refunded: 0, refundedSum: 0 }), [sales]);
@@ -59,7 +58,7 @@ export default function Sales({ refreshAlerts }) {
           <DateRange from={from} to={to} onChange={(a, b) => { setFrom(a); setTo(b); }} />
           <SearchInput value={query} onChange={setQuery} placeholder="Chek raqami, mijoz yoki telefon" />
           <Segmented
-            options={[{ id: 'all', label: 'Hammasi' }, { id: 'completed', label: 'Yakunlangan' }, { id: 'debt', label: 'Qarzga' }, { id: 'refunded', label: 'Qaytarilgan' }]}
+            options={[{ id: 'all', label: 'Hammasi' }, { id: 'completed', label: 'Yakunlangan' }, { id: 'debt', label: 'Qarzga' }, { id: 'returned', label: 'Qaytarishlar' }]}
             value={status}
             onChange={setStatus}
           />
@@ -84,9 +83,9 @@ export default function Sales({ refreshAlerts }) {
                     <td>{s.customer_name ? <><div className="cell-title">{s.customer_name}</div>{s.customer_phone && <div className="cell-sub">{s.customer_phone}</div>}</> : <span className="muted">Mijozsiz</span>}</td>
                     <td className="num">{s.items_qty}</td>
                     <td className="secondary">{methodsText(s.methods)}</td>
-                    <td className="num strong">{money(s.final_total)}</td>
+                    <td className="num strong">{money(s.final_total)}{s.returned_amount > 0 && <div className="cell-sub text-danger">−{money(s.returned_amount)}</div>}</td>
                     <td className={`num ${s.debt_amount ? 'amount-neg' : 'muted'}`}>{s.debt_amount ? money(s.debt_amount) : '—'}</td>
-                    <td>{s.status === 'completed' ? <Pill tone="success">Yakunlangan</Pill> : <Pill tone="danger">Qaytarilgan</Pill>}</td>
+                    <td><SaleStatus sale={s} /></td>
                   </tr>
                 ))}
               </tbody>

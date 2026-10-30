@@ -6,7 +6,7 @@ import CustomerForm from './CustomerForm';
 import CustomerMoneyModal from './CustomerMoneyModal';
 import SaleDetail from './SaleDetail';
 import { useConfirm } from './ConfirmDialog';
-import { EmptyState, Pill, Tabs } from './ui';
+import { EmptyState, Pill, SaleStatus, Tabs } from './ui';
 import { PAYMENT_LABELS, TX_LABELS, balanceState, fmtDate, fmtDateTime, signedSom, som } from '../lib/format';
 
 const TX_TONE = { deposit: 'success', withdraw: 'warning', sale: 'primary', refund: 'neutral', adjustment: 'warning' };
@@ -145,10 +145,10 @@ export default function CustomerDetail({ customerId, onClose, onChanged }) {
                         <tr key={s.id} className="clickable" onClick={() => setSaleId(s.id)}>
                           <td className="mono">{s.sale_number}</td>
                           <td className="nowrap">{fmtDateTime(s.created_at)}</td>
-                          <td className="num strong">{som(s.final_total)}</td>
+                          <td className="num strong">{som(s.final_total)}{s.returned_amount > 0 && <div className="cell-sub text-danger">−{som(s.returned_amount)}</div>}</td>
                           <td className="num">{s.balance_used ? som(s.balance_used) : '—'}</td>
                           <td className={`num ${s.debt_amount ? 'amount-neg' : ''}`}>{s.debt_amount ? som(s.debt_amount) : '—'}</td>
-                          <td>{s.status === 'completed' ? <Pill tone="success">Yakunlangan</Pill> : <Pill tone="danger">Qaytarilgan</Pill>}</td>
+                          <td><SaleStatus sale={s} /></td>
                         </tr>
                       ))}
                     </tbody>

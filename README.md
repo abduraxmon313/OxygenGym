@@ -40,6 +40,19 @@ Sotuvda to'lov tartibi:
 
 Har bir mijozga qarz sharti qo'yiladi: cheklovsiz, limit bilan yoki qarz berilmaydi. Barcha harakatlar (to'lov, xarid, qaytarish, tuzatish) mijoz kartasida keyingi balansi bilan ko'rinadi. Balansni to'g'ridan-to'g'ri o'zgartirib bo'lmaydi, faqat sababi yozilgan "Tuzatish" orqali o'zgaradi.
 
+## Logo
+
+Logoni `assets/brand/` papkasiga bitta rasm (PNG, JPG yoki WEBP) qilib joylang. Build vaqtida `scripts/prepare-brand.py` shu rasmdan yon menyu logosini (o'zgartirishsiz) va dastur ikonkasini yasaydi.
+
+## Ombor va qaytarish qoidalari
+
+- **Muddati o'tgan partiya sotilmaydi.** Bunday tovar "Ogohlantirishlar" va "Ombor holati" oynasida ko'rinadi; uni hisobdan chiqarish kerak.
+- **Hisobdan chiqarish** (shikastlangan, yo'qolgan, muddati o'tgan) va **qoldiqni tuzatish** (inventarizatsiya) mahsulotning "Ombor holati" oynasida. Barchasi "Hisobotlar → Yo'qotishlar" da ko'rinadi.
+- **Qisman qaytarish:** chekdan istalgan miqdorni qaytarish mumkin. Summa chegirma ulushi bilan hisoblanadi; avval mijoz hisobidan yechilgan yoki qarzga yozilgan qism hisobga qaytadi, qolgani naqd beriladi.
+- **Kirimni bekor qilish:** undan hech narsa sotilmagan bo'lsa.
+- **Arxiv:** mahsulot va mijozlar o'chirilmaydi, arxivlanadi va istalgan vaqt qaytariladi.
+- Savatcha ochilgandan keyin narx o'zgarsa, sotuv to'xtatiladi va savatcha yangi narx bilan yangilanadi.
+
 ## Ma'lumotlar va zaxira nusxa
 
 - Baza: `%APPDATA%\OxygenGym\data\oxygengym.db`

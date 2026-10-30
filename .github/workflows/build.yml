@@ -41,6 +41,15 @@ jobs:
         with:
           node-version: '20'
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Prepare logo and icons from assets/brand
+        run: |
+          python -m pip install --disable-pip-version-check -q pillow
+          python scripts/prepare-brand.py
+
       - name: Install app dependencies
         run: npm install
 

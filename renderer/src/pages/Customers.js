@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { toast } from 'react-hot-toast';
-import { ArrowDownLeft, HandCoins, UserPlus, Users, Wallet } from 'lucide-react';
+import { ArchiveRestore, ArrowDownLeft, HandCoins, UserPlus, Users, Wallet } from 'lucide-react';
 import { EmptyState, PageHeader, SearchInput, Segmented, StatCard } from '../components/ui';
 import CustomerForm from '../components/CustomerForm';
 import CustomerDetail from '../components/CustomerDetail';
@@ -29,6 +29,16 @@ export default function Customers() {
     }
   }, [query, status]);
 
+  async function restore(c) {
+    try {
+      await window.api.customers.restore(c.id);
+      toast.success(`"${c.name}" arxivdan qaytarildi`);
+      load();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  }
+
   useEffect(() => {
     const t = setTimeout(load, 120);
     return () => clearTimeout(t);
@@ -54,7 +64,7 @@ export default function Customers() {
         <div className="toolbar">
           <SearchInput value={query} onChange={setQuery} placeholder="Ism yoki telefon raqami" />
           <Segmented
-            options={[{ id: 'all', label: 'Hammasi' }, { id: 'debt', label: 'Qarzdorlar' }, { id: 'advance', label: 'Avansi borlar' }]}
+            options={[{ id: 'all', label: 'Hammasi' }, { id: 'debt', label: 'Qarzdorlar' }, { id: 'advance', label: 'Avansi borlar' }, { id: 'archived', label: 'Arxiv' }]}
             value={status}
             onChange={setStatus}
           />
@@ -64,7 +74,7 @@ export default function Customers() {
           {list.length === 0 ? (
             <EmptyState
               icon={Users}
-              title={status === 'debt' ? "Qarzdor mijoz yo'q" : status === 'advance' ? "Avansi bor mijoz yo'q" : 'Mijoz topilmadi'}
+              title={status === 'debt' ? "Qarzdor mijoz yo'q" : status === 'advance' ? "Avansi bor mijoz yo'q" : status === 'archived' ? "Arxiv bo'sh" : 'Mijoz topilmadi'}
               text="Mijoz qo'shganda uning bergan pulini yoki eski qarzini darhol kiritish mumkin"
               action={status === 'all' && !query && <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}><UserPlus size={16} />Mijoz qo'shish</button>}
             />
@@ -80,7 +90,7 @@ export default function Customers() {
                 {list.map((c) => {
                   const b = balanceState(c.balance);
                   return (
-                    <tr key={c.id} className="clickable" onClick={() => setOpenId(c.id)}>
+                    <tr key={c.id} className={status === 'archived' ? 'dim' : 'clickable'} onClick={status === 'archived' ? undefined : () => setOpenId(c.id)}>
                       <td>
                         <div className="row" style={{ gap: 12 }}>
                           <div className="avatar">{initials(c.name)}</div>
@@ -96,9 +106,13 @@ export default function Customers() {
                       <td className="num"><div>{c.purchases_count} ta</div><div className="cell-sub">{money(c.purchases_total)}</div></td>
                       <td className="secondary nowrap">{c.last_activity ? fmtDateTime(c.last_activity) : '—'}</td>
                       <td className="actions" onClick={(e) => e.stopPropagation()}>
-                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPaying(c)}>
-                          <ArrowDownLeft size={14} />{c.balance < 0 ? "Qarz to'lovi" : "To'lov"}
-                        </button>
+                        {status === 'archived' ? (
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => restore(c)}><ArchiveRestore size={14} />Qaytarish</button>
+                        ) : (
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPaying(c)}>
+                            <ArrowDownLeft size={14} />{c.balance < 0 ? "Qarz to'lovi" : "To'lov"}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

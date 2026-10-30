@@ -13,6 +13,8 @@ export default function Reports() {
   const [rows, setRows] = useState([]);
   const [cash, setCash] = useState(null);
   const [from, to] = range;
+  // Boshqa bo'lim ma'lumotlari yangi jadvalda ko'rinib qolmasligi uchun
+  useEffect(() => { setRows([]); }, [tab]);
 
   const load = useCallback(async () => {
     const filters = { dateFrom: from, dateTo: to };
@@ -20,7 +22,12 @@ export default function Reports() {
       if (tab === 'cash') {
         setCash(await window.api.reports.cashflow(filters));
       } else {
-        const fn = { sales: window.api.reports.sales, products: window.api.reports.products, categories: window.api.reports.categories }[tab];
+        const fn = {
+          sales: window.api.reports.sales,
+          products: window.api.reports.products,
+          categories: window.api.reports.categories,
+          losses: window.api.reports.losses,
+        }[tab];
         setRows(await fn(filters));
       }
     } catch (err) {
@@ -33,7 +40,17 @@ export default function Reports() {
   const cost = sum(rows, 'cost');
   const profit = revenue - cost;
 
-  const summaryCards = tab === 'cash' && cash ? (
+  const lossOut = rows.filter((r) => r.quantity < 0).reduce((s, r) => s + -r.quantity * r.cost_price, 0);
+  const lossWriteoff = rows.filter((r) => r.quantity < 0 && r.type === 'writeoff').reduce((s, r) => s + -r.quantity * r.cost_price, 0);
+  const gainIn = rows.filter((r) => r.quantity > 0).reduce((s, r) => s + r.quantity * r.cost_price, 0);
+
+  const summaryCards = tab === 'losses' ? (
+    <div className="stat-grid cols-3">
+      <StatCard label="Hisobdan chiqarilgan" value={money(lossWriteoff)} unit="so'm" hint="Muddati o'tgan, shikastlangan, yo'qolgan" icon={Wallet} tone={lossWriteoff ? 'danger' : 'neutral'} />
+      <StatCard label="Inventarizatsiyada kamaygan" value={money(lossOut - lossWriteoff)} unit="so'm" icon={BarChart3} tone="warning" />
+      <StatCard label="Inventarizatsiyada ortgan" value={money(gainIn)} unit="so'm" icon={TrendingUp} tone="success" />
+    </div>
+  ) : tab === 'cash' && cash ? (
     <div className="stat-grid">
       <StatCard label="Jami tushum" value={money(cash.totals.total)} unit="so'm" icon={Banknote} tone="primary" />
       <StatCard label="Naqd" value={money(cash.totals.cash)} unit="so'm" icon={Wallet} />
@@ -62,6 +79,7 @@ export default function Reports() {
             { id: 'products', label: 'Mahsulotlar' },
             { id: 'categories', label: 'Kategoriyalar' },
             { id: 'cash', label: 'Kassa' },
+            { id: 'losses', label: "Yo'qotishlar" },
           ]}
         />
         <div className="toolbar">
@@ -73,13 +91,14 @@ export default function Reports() {
         <div className="table-wrap">
           {tab === 'sales' && (rows.length === 0 ? empty : (
             <table className="table">
-              <thead><tr><th>Sana</th><th className="num">Cheklar</th><th className="num">Chegirma</th><th className="num">Savdo</th><th className="num">Tannarx</th><th className="num">Foyda</th><th className="num">Marja</th><th className="num">Qarzga</th></tr></thead>
+              <thead><tr><th>Sana</th><th className="num">Cheklar</th><th className="num">Chegirma</th><th className="num">Qaytarilgan</th><th className="num">Sof savdo</th><th className="num">Tannarx</th><th className="num">Foyda</th><th className="num">Marja</th><th className="num">Qarzga</th></tr></thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.date}>
                     <td>{fmtDate(r.date)}</td>
                     <td className="num">{r.sales_count}</td>
                     <td className="num secondary">{r.discount ? money(r.discount) : '—'}</td>
+                    <td className={`num ${r.returned ? 'text-danger' : 'muted'}`}>{r.returned ? money(r.returned) : '—'}</td>
                     <td className="num strong">{money(r.revenue)}</td>
                     <td className="num secondary">{money(r.cost)}</td>
                     <td className={`num ${r.profit >= 0 ? 'amount-pos' : 'amount-neg'}`}>{money(r.profit)}</td>
@@ -90,7 +109,7 @@ export default function Reports() {
               </tbody>
               <tfoot>
                 <tr>
-                  <td>Jami</td><td className="num">{sum(rows, 'sales_count')}</td><td className="num">{money(sum(rows, 'discount'))}</td>
+                  <td>Jami</td><td className="num">{sum(rows, 'sales_count')}</td><td className="num">{money(sum(rows, 'discount'))}</td><td className="num">{money(sum(rows, 'returned'))}</td>
                   <td className="num">{money(revenue)}</td><td className="num">{money(cost)}</td><td className="num">{money(profit)}</td>
                   <td className="num">{pct(profit, revenue)}</td><td className="num">{money(sum(rows, 'debt'))}</td>
                 </tr>
@@ -161,6 +180,24 @@ export default function Reports() {
                   <td className="num">{som(cash.totals.total)}</td><td className="num">{money(cash.totals.debt)}</td>
                 </tr>
               </tfoot>
+            </table>
+          ))}
+          {tab === 'losses' && (rows.length === 0 ? empty : (
+            <table className="table">
+              <thead><tr><th>Sana</th><th>Mahsulot</th><th>Turi</th><th>Sabab</th><th>Partiya</th><th className="num">Miqdor</th><th className="num">Qiymat (tannarx)</th></tr></thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id}>
+                    <td className="nowrap secondary">{fmtDate(r.created_at)}</td>
+                    <td><div className="cell-title">{r.product_name}</div><div className="cell-sub">{productMeta(r) || `Kod ${r.code}`}</div></td>
+                    <td>{r.type_label}</td>
+                    <td className="secondary">{r.reason || '—'}</td>
+                    <td className="mono secondary">{r.batch_number || '—'}</td>
+                    <td className={`num ${r.quantity < 0 ? 'amount-neg' : 'amount-pos'}`}>{r.quantity > 0 ? `+${r.quantity}` : r.quantity}</td>
+                    <td className="num">{money(Math.abs(r.quantity) * r.cost_price)}</td>
+                  </tr>
+                ))}
+              </tbody>
             </table>
           ))}
         </div>
