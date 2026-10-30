@@ -48,10 +48,12 @@ const navGroups = () => [
 
 function BrandMark() {
   // Logo: renderer/public/logo.png (assets/brand dan build vaqtida olinadi)
+  // ?v= qo'shimchasi keshdan eski logoni olishni oldini oladi
   const [failed, setFailed] = useState(false);
+  const ver = typeof window !== 'undefined' && window.__OXYGENGYM_VERSION__ ? window.__OXYGENGYM_VERSION__ : '0';
   return (
     <div className="brand-mark">
-      {failed ? <span className="fallback">OG</span> : <img src="./logo.png" alt="Oxygen Fitness" onError={() => setFailed(true)} />}
+      {failed ? <span className="fallback">OG</span> : <img src={`./logo.png?v=${ver}`} alt="OxygenGym" onError={() => setFailed(true)} />}
     </div>
   );
 }
