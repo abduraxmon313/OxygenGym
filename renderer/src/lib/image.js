@@ -1,16 +1,18 @@
+import { t } from './i18n';
+
 // Mahsulot rasmini kichraytirib, WebP formatida data-URL qilib qaytaradi.
-// Bazada katta rasmlar saqlansa ro'yxatlar sekinlashadi va zaxira nusxalar og'irlashadi.
+// Bazada katta rasmlar saqlansa ro'yxatlar sekinlashadi va baza og'irlashadi.
 const MAX_SIDE = 480;
 const MAX_INPUT = 15 * 1024 * 1024;
 
 export function resizeImage(file) {
   return new Promise((resolve, reject) => {
     if (!file || !/^image\/(png|jpe?g|webp|gif|bmp)$/.test(file.type)) {
-      reject(new Error('Faqat PNG, JPG yoki WEBP rasm tanlang'));
+      reject(new Error(t('Faqat PNG, JPG yoki WEBP rasm tanlang')));
       return;
     }
     if (file.size > MAX_INPUT) {
-      reject(new Error("Rasm 15 MB dan katta bo'lmasligi kerak"));
+      reject(new Error(t("Rasm 15 MB dan katta bo'lmasligi kerak")));
       return;
     }
     const url = URL.createObjectURL(file);
@@ -30,7 +32,7 @@ export function resizeImage(file) {
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error("Rasmni o'qib bo'lmadi"));
+      reject(new Error(t("Rasmni o'qib bo'lmadi")));
     };
     img.src = url;
   });

@@ -4,10 +4,10 @@ import { ImagePlus, X } from 'lucide-react';
 import Modal from './Modal';
 import MoneyInput from './MoneyInput';
 import { CategorySelect, Field } from './ui';
-import { isoDate, som } from '../lib/format';
+import { UNITS, isoDate, som, unitLabel } from '../lib/format';
+import { t } from '../lib/i18n';
 import { resizeImage } from '../lib/image';
 
-const UNITS = ['dona', 'quti', 'paket', 'shisha', 'kg', 'litr'];
 
 function emptyForm(defaults = {}) {
   return {
@@ -69,9 +69,9 @@ export default function ProductForm({ mode = 'create', source, categories, brand
   async function submit(e) {
     e.preventDefault();
     if (busy || imageBusy) return;
-    if (!form.name.trim()) return toast.error('Mahsulot nomini kiriting');
-    if (!sell) return toast.error('Sotuv narxini kiriting');
-    if (sell < cost) toast('Diqqat: sotuv narxi tannarxdan past', { icon: '!' });
+    if (!form.name.trim()) return toast.error(t('Mahsulot nomini kiriting'));
+    if (!sell) return toast.error(t('Sotuv narxini kiriting'));
+    if (sell < cost) toast(t('Diqqat: sotuv narxi tannarxdan past'), { icon: '!' });
     setBusy(true);
     try {
       const payload = { ...form };
@@ -82,7 +82,7 @@ export default function ProductForm({ mode = 'create', source, categories, brand
       const saved = mode === 'edit'
         ? await window.api.products.update(source.id, payload)
         : await window.api.products.create(payload);
-      toast.success(mode === 'edit' ? 'Mahsulot saqlandi' : `Mahsulot yaratildi (kod ${saved.code})`);
+      toast.success(mode === 'edit' ? t('Mahsulot saqlandi') : t('Mahsulot yaratildi (kod {c})', { c: saved.code }));
       onSaved(saved);
     } catch (err) {
       toast.error(err.message);
@@ -90,10 +90,10 @@ export default function ProductForm({ mode = 'create', source, categories, brand
     }
   }
 
-  const title = mode === 'edit' ? 'Mahsulotni tahrirlash' : mode === 'duplicate' ? 'Yangi variant (nusxa)' : 'Yangi mahsulot';
+  const title = mode === 'edit' ? t('Mahsulotni tahrirlash') : mode === 'duplicate' ? t('Yangi variant (nusxa)') : t('Yangi mahsulot');
   const subtitle = mode === 'duplicate'
-    ? "Boshqa ta'm yoki hajm uchun alohida mahsulot — har birining qoldig'i alohida hisoblanadi"
-    : mode === 'edit' ? `Kod ${source.code} · omborda ${source.stock} ${source.unit || 'dona'}` : "Ma'lumotlarni qo'lda kiriting";
+    ? t("Boshqa ta'm yoki hajm uchun alohida mahsulot — har birining qoldig'i alohida hisoblanadi")
+    : mode === 'edit' ? t('Kod {c} · omborda {n} {u}', { c: source.code, n: source.stock, u: unitLabel(source.unit) }) : t("Ma'lumotlarni qo'lda kiriting");
 
   return (
     <Modal
@@ -103,9 +103,9 @@ export default function ProductForm({ mode = 'create', source, categories, brand
       onClose={onClose}
       footer={(
         <>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>Bekor qilish</button>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>{t('Bekor qilish')}</button>
           <button type="submit" form="product-form" className="btn btn-primary" disabled={busy || imageBusy}>
-            {mode === 'edit' ? 'Saqlash' : 'Yaratish'}
+            {mode === 'edit' ? t('Saqlash') : t('Yaratish')}
           </button>
         </>
       )}
@@ -116,10 +116,10 @@ export default function ProductForm({ mode = 'create', source, categories, brand
         </datalist>
 
         <div className="form-section">
-          <div className="form-section-title">Asosiy ma'lumotlar</div>
+          <div className="form-section-title">{t("Asosiy ma'lumotlar")}</div>
           <div style={{ display: 'grid', gridTemplateColumns: '120px minmax(0, 1fr)', gap: 20 }}>
             <div className="field">
-              <label>Rasm</label>
+              <label>{t('Rasm')}</label>
               <div
                 className={`image-picker${form.image ? ' has-image' : ''}`}
                 role="button"
@@ -130,68 +130,68 @@ export default function ProductForm({ mode = 'create', source, categories, brand
                 {form.image ? (
                   <>
                     <img src={form.image} alt="" />
-                    <button type="button" className="remove" aria-label="Rasmni olib tashlash" onClick={(e) => { e.stopPropagation(); set('image')(''); }}>
+                    <button type="button" className="remove" aria-label={t('Rasmni olib tashlash')} onClick={(e) => { e.stopPropagation(); set('image')(''); }}>
                       <X size={13} />
                     </button>
                   </>
                 ) : (
-                  <div className="placeholder"><ImagePlus size={22} />Rasm tanlash<br />PNG, JPG, WEBP</div>
+                  <div className="placeholder"><ImagePlus size={22} />{t('Rasm tanlash')}<br />PNG, JPG, WEBP</div>
                 )}
-                {imageBusy && <div className="busy">Tayyorlanmoqda…</div>}
+                {imageBusy && <div className="busy">{t('Tayyorlanmoqda…')}</div>}
               </div>
               <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={pickImage} />
             </div>
             <div className="stack">
               <div className="grid-3">
-                <Field label="Mahsulot nomi" required className="span-2">
-                  <input className="input" value={form.name} onChange={setFromEvent('name')} placeholder="Masalan: Gold Standard 100% Whey" autoFocus />
+                <Field label={t('Mahsulot nomi')} required className="span-2">
+                  <input className="input" value={form.name} onChange={setFromEvent('name')} placeholder={t('Masalan: Gold Standard 100% Whey')} autoFocus />
                 </Field>
-                <Field label="Mahsulot kodi" hint="Bo'sh qolsa avtomatik">
-                  <input className="input mono" value={form.code} onChange={setFromEvent('code')} placeholder={nextCode || 'Avtomatik'} />
+                <Field label={t('Mahsulot kodi')} hint={t("Bo'sh qolsa avtomatik")}>
+                  <input className="input mono" value={form.code} onChange={setFromEvent('code')} placeholder={nextCode || t('Avtomatik')} />
                 </Field>
               </div>
               <div className="grid-3">
-                <Field label="Kategoriya">
+                <Field label={t('Kategoriya')}>
                   <CategorySelect categories={categories} value={form.category_id} onChange={set('category_id')} />
                 </Field>
-                <Field label="Ishlab chiqaruvchi (brend)">
+                <Field label={t('Ishlab chiqaruvchi (brend)')}>
                   <input className="input" list="brand-list" value={form.brand} onChange={setFromEvent('brand')} placeholder="Optimum Nutrition" />
                 </Field>
-                <Field label="Hajmi / qadoq">
-                  <input className="input" value={form.weight} onChange={setFromEvent('weight')} placeholder="2,27 kg · 120 kapsula" />
+                <Field label={t('Hajmi / qadoq')}>
+                  <input className="input" value={form.weight} onChange={setFromEvent('weight')} placeholder={t('2,27 kg · 120 kapsula')} />
                 </Field>
               </div>
             </div>
           </div>
           <div className="grid-3 mt-16">
-            <Field label="Ta'mi / varianti">
-              <input className="input" value={form.flavor} onChange={setFromEvent('flavor')} placeholder="Shokolad, vanil, ta'msiz" />
+            <Field label={t("Ta'mi / varianti")}>
+              <input className="input" value={form.flavor} onChange={setFromEvent('flavor')} placeholder={t("Shokolad, vanil, ta'msiz")} />
             </Field>
-            <Field label="O'lchov birligi">
+            <Field label={t("O'lchov birligi")}>
               <select className="input" value={form.unit} onChange={setFromEvent('unit')}>
-                {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                {UNITS.map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}
               </select>
             </Field>
-            <Field label="Minimal qoldiq" hint="Shundan kam qolsa ogohlantiradi">
+            <Field label={t('Minimal qoldiq')} hint={t('Shundan kam qolsa ogohlantiradi')}>
               <input className="input tnum" type="number" min="0" value={form.min_stock} onChange={setFromEvent('min_stock')} />
             </Field>
           </div>
         </div>
 
         <div className="form-section">
-          <div className="form-section-title">Narx</div>
+          <div className="form-section-title">{t('Narx')}</div>
           <div className="grid-3">
-            <Field label="Tannarx (kelish narxi)">
+            <Field label={t('Tannarx (kelish narxi)')}>
               <MoneyInput value={form.cost_price} onChange={set('cost_price')} />
             </Field>
-            <Field label="Sotuv narxi" required>
+            <Field label={t('Sotuv narxi')} required>
               <MoneyInput value={form.sell_price} onChange={set('sell_price')} />
             </Field>
-            <Field label="Foyda">
+            <Field label={t('Foyda')}>
               <div className="input readonly tnum">
                 {margin === null ? <span className="muted">—</span> : (
                   <span className={margin >= 0 ? 'amount-pos' : 'amount-neg'}>
-                    {som(margin)}{markup !== null && <span className="muted" style={{ fontWeight: 400 }}> · ustama {markup.toFixed(0)}%</span>}
+                    {som(margin)}{markup !== null && <span className="muted" style={{ fontWeight: 400 }}> · {t('ustama {p}%', { p: markup.toFixed(0) })}</span>}
                   </span>
                 )}
               </div>
@@ -201,12 +201,12 @@ export default function ProductForm({ mode = 'create', source, categories, brand
 
         {allowInitialStock && mode !== 'edit' && (
           <div className="form-section">
-            <div className="form-section-title">Boshlang'ich qoldiq<span>ixtiyoriy — keyinroq "Kirim" orqali ham qo'shish mumkin</span></div>
+            <div className="form-section-title">{t("Boshlang'ich qoldiq")}<span>{t("ixtiyoriy — keyinroq \"Kirim\" orqali ham qo'shish mumkin")}</span></div>
             <div className="grid-3">
-              <Field label="Miqdor">
+              <Field label={t('Miqdor')}>
                 <input className="input tnum" type="number" min="0" value={form.initial_stock} onChange={setFromEvent('initial_stock')} placeholder="0" />
               </Field>
-              <Field label="Yaroqlilik muddati">
+              <Field label={t('Yaroqlilik muddati')}>
                 <input className="input" type="date" min={isoDate()} value={form.initial_expiry} onChange={setFromEvent('initial_expiry')} />
               </Field>
             </div>
@@ -214,8 +214,8 @@ export default function ProductForm({ mode = 'create', source, categories, brand
         )}
 
         <div className="form-section">
-          <Field label="Izoh">
-            <textarea className="input" rows={2} value={form.description} onChange={setFromEvent('description')} placeholder="Tarkibi, porsiya soni va boshqa ma'lumotlar" />
+          <Field label={t('Izoh')}>
+            <textarea className="input" rows={2} value={form.description} onChange={setFromEvent('description')} placeholder={t("Tarkibi, porsiya soni va boshqa ma'lumotlar")} />
           </Field>
         </div>
       </form>

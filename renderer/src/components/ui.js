@@ -1,12 +1,26 @@
 import React from 'react';
 import { Package, Search } from 'lucide-react';
-import { DATE_PRESETS } from '../lib/format';
+import { catName, datePresets, groupPhone, phoneDigits } from '../lib/format';
+import { t } from '../lib/i18n';
+
+// Rasm CSS fon sifatida chiziladi: o'lchami qat'iy, matn ustiga chiqmaydi, yuklanish kechikmaydi
+const bg = (src) => ({ backgroundImage: `url("${src}")` });
 
 export function ProductThumb({ product, size }) {
   const px = size === 'sm' ? 15 : size === 'lg' ? 22 : 18;
+  const img = product && product.image;
   return (
-    <div className={`thumb${size ? ` ${size}` : ''}`}>
-      {product && product.image ? <img src={product.image} alt="" loading="lazy" /> : <Package size={px} strokeWidth={1.6} />}
+    <div className={`thumb${size ? ` ${size}` : ''}${img ? ' has-image' : ''}`} style={img ? bg(img) : undefined}>
+      {!img && <Package size={px} strokeWidth={1.6} />}
+    </div>
+  );
+}
+
+export function ProductMedia({ product, className = 'tile-media' }) {
+  const img = product && product.image;
+  return (
+    <div className={`${className}${img ? ' has-image' : ''}`} style={img ? bg(img) : undefined}>
+      {!img && <Package size={28} strokeWidth={1.4} />}
     </div>
   );
 }
@@ -23,9 +37,9 @@ export function PageHeader({ title, subtitle, actions }) {
   );
 }
 
-export function StatCard({ label, value, unit, hint, icon: Icon, tone = 'neutral', onClick }) {
+export function StatCard({ label, value, unit, hint, icon: Icon, tone = 'neutral', onClick, title, children }) {
   return (
-    <div className={`stat${onClick ? ' clickable' : ''}`} onClick={onClick} role={onClick ? 'button' : undefined}>
+    <div className={`stat${onClick ? ' clickable' : ''}`} onClick={onClick} role={onClick ? 'button' : undefined} title={title}>
       <div className="stat-top">
         <span className="stat-label">{label}</span>
         {Icon && <span className={`stat-icon ${tone}`}><Icon size={17} strokeWidth={2} /></span>}
@@ -34,6 +48,7 @@ export function StatCard({ label, value, unit, hint, icon: Icon, tone = 'neutral
         {value}{unit && <small>{unit}</small>}
       </div>
       {hint && <div className="stat-hint">{hint}</div>}
+      {children}
     </div>
   );
 }
@@ -43,9 +58,9 @@ export function Pill({ tone = 'neutral', dot = true, children }) {
 }
 
 export function SaleStatus({ sale }) {
-  if (sale.status !== 'completed') return <Pill tone="danger">Qaytarilgan</Pill>;
-  if (sale.returned_amount > 0) return <Pill tone="warning">Qisman qaytarilgan</Pill>;
-  return <Pill tone="success">Yakunlangan</Pill>;
+  if (sale.status !== 'completed') return <Pill tone="danger">{t('Qaytarilgan')}</Pill>;
+  if (sale.returned_amount > 0) return <Pill tone="warning">{t('Qisman qaytarilgan')}</Pill>;
+  return <Pill tone="success">{t('Yakunlangan')}</Pill>;
 }
 
 export function EmptyState({ icon: Icon, title, text, action }) {
@@ -59,7 +74,7 @@ export function EmptyState({ icon: Icon, title, text, action }) {
   );
 }
 
-export function SearchInput({ value, onChange, placeholder = 'Qidirish…', autoFocus, inputRef, onKeyDown, size }) {
+export function SearchInput({ value, onChange, placeholder, autoFocus, inputRef, onKeyDown, size }) {
   return (
     <div className={`search${size === 'lg' ? ' lg' : ''}`}>
       <Search size={size === 'lg' ? 18 : 16} />
@@ -67,7 +82,7 @@ export function SearchInput({ value, onChange, placeholder = 'Qidirish…', auto
         ref={inputRef}
         className="input"
         value={value}
-        placeholder={placeholder}
+        placeholder={placeholder || t('Qidirish…')}
         autoFocus={autoFocus}
         onKeyDown={onKeyDown}
         onChange={(e) => onChange(e.target.value)}
@@ -91,10 +106,10 @@ export function Segmented({ options, value, onChange, size }) {
 export function Tabs({ tabs, value, onChange }) {
   return (
     <div className="tabs">
-      {tabs.map((t) => (
-        <button key={t.id} type="button" className={`tab${value === t.id ? ' active' : ''}`} onClick={() => onChange(t.id)}>
-          {t.label}
-          {t.count !== undefined && <span className="tab-count">{t.count}</span>}
+      {tabs.map((tab) => (
+        <button key={tab.id} type="button" className={`tab${value === tab.id ? ' active' : ''}`} onClick={() => onChange(tab.id)}>
+          {tab.label}
+          {tab.count !== undefined && <span className="tab-count">{tab.count}</span>}
         </button>
       ))}
     </div>
@@ -102,25 +117,26 @@ export function Tabs({ tabs, value, onChange }) {
 }
 
 export function DateRange({ from, to, onChange }) {
-  const active = DATE_PRESETS.find((p) => {
+  const presets = datePresets();
+  const active = presets.find((p) => {
     const [a, b] = p.range();
     return a === from && b === to;
   });
   return (
     <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
       <Segmented
-        options={DATE_PRESETS.map((p) => ({ id: p.id, label: p.label }))}
+        options={presets.map((p) => ({ id: p.id, label: p.label }))}
         value={active ? active.id : null}
         onChange={(id) => {
-          const preset = DATE_PRESETS.find((p) => p.id === id);
+          const preset = presets.find((p) => p.id === id);
           const [a, b] = preset.range();
           onChange(a, b);
         }}
       />
       <div className="row" style={{ gap: 6 }}>
-        <input className="input" type="date" value={from} max={to} onChange={(e) => onChange(e.target.value, to)} style={{ width: 150 }} />
+        <input className="input" type="date" value={from} max={to} onChange={(e) => e.target.value && onChange(e.target.value, to)} style={{ width: 148 }} />
         <span className="muted">—</span>
-        <input className="input" type="date" value={to} min={from} onChange={(e) => onChange(from, e.target.value)} style={{ width: 150 }} />
+        <input className="input" type="date" value={to} min={from} onChange={(e) => e.target.value && onChange(from, e.target.value)} style={{ width: 148 }} />
       </div>
     </div>
   );
@@ -136,16 +152,38 @@ export function Field({ label, required, hint, error, children, className }) {
   );
 }
 
-export function CategorySelect({ categories, value, onChange, emptyLabel = 'Tanlanmagan', className = 'input' }) {
+export function CategorySelect({ categories, value, onChange, emptyLabel, className = 'input' }) {
   return (
     <select className={className} value={value || ''} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : '')}>
-      <option value="">{emptyLabel}</option>
+      <option value="">{emptyLabel || t('Tanlanmagan')}</option>
       {categories.map((c) => (
-        <optgroup key={c.id} label={c.name}>
-          <option value={c.id}>{c.name} — umumiy</option>
-          {c.children.map((ch) => <option key={ch.id} value={ch.id}>{ch.name}</option>)}
+        <optgroup key={c.id} label={catName(c.name)}>
+          <option value={c.id}>{t('{name} — umumiy', { name: catName(c.name) })}</option>
+          {c.children.map((ch) => <option key={ch.id} value={ch.id}>{catName(ch.name)}</option>)}
         </optgroup>
       ))}
     </select>
+  );
+}
+
+// +998 o'zgarmas; foydalanuvchi faqat 9 ta raqam yozadi: 33 313 44 22
+export function PhoneInput({ value, onChange, autoFocus, invalid }) {
+  const digits = phoneDigits(value);
+  return (
+    <div className={`phone-input${invalid ? ' is-invalid' : ''}`}>
+      <span className="prefix">+998</span>
+      <input
+        inputMode="numeric"
+        autoComplete="off"
+        value={groupPhone(digits)}
+        placeholder="33 313 44 22"
+        autoFocus={autoFocus}
+        onChange={(e) => {
+          const raw = e.target.value.replace(/\D/g, '');
+          // To'liq raqam (998 bilan) joylansa ham to'g'ri ishlaydi
+          onChange(phoneDigits(raw.length > 9 && raw.startsWith('998') ? raw : raw.slice(0, 9)));
+        }}
+      />
+    </div>
   );
 }

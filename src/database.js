@@ -3,11 +3,12 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+const i18n = require('./i18n');
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const PRICE_CHANGED = "Mahsulot narxi o'zgargan. Savatcha yangi narxlar bilan yangilandi — summani qayta tekshiring";
 const MONEY_METHODS = ['cash', 'card', 'click', 'payme'];
-const SETTING_KEYS = ['shopName', 'shopPhone', 'shopAddress', 'allowDebt', 'lowStockAlert', 'expiryAlertDays'];
+const SETTING_KEYS = ['shopName', 'shopPhone', 'shopAddress', 'allowDebt', 'lowStockAlert', 'expiryAlertDays', 'language'];
 
 // Kategoriyalar blb.uz katalogi asosida tuzilgan (zal bari uchun moslashtirilgan)
 const CATEGORY_TREE = [
@@ -64,8 +65,14 @@ function toInt(v) {
   const n = Math.round(Number(v));
   return Number.isFinite(n) ? n : 0;
 }
-function fail(message) { throw new Error(message); }
+function fail(template, vars, code) {
+  const err = new Error(i18n.t(template, vars));
+  if (code) err.code = code;
+  throw err;
+}
+// Jurnal (audit) yozuvlari doim o'zbekcha; foydalanuvchiga ko'rinadigan xatolar tanlangan tilda
 function fmt(n) { return `${String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} so'm`; }
+const money = (n) => i18n.money(n);
 function opt(v) {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
@@ -75,13 +82,22 @@ function range(filters = {}) {
   return [filters.dateFrom || '0000-01-01', filters.dateTo || '9999-12-31'];
 }
 
+// O'zbekiston raqami: +998 dan keyin 9 ta raqam → "+998 33 313 44 22"
+function phoneDigits(v) {
+  let d = String(v || '').replace(/\D/g, '');
+  if (d.length === 12 && d.startsWith('998')) d = d.slice(3);
+  return d;
+}
+function formatPhone(d) {
+  return `+998 ${d.slice(0, 2)} ${d.slice(2, 5)} ${d.slice(5, 7)} ${d.slice(7, 9)}`;
+}
+
 class DB {
   constructor(dataDir, logger) {
     this.logger = logger || console;
     this.dataDir = dataDir;
     fs.mkdirSync(dataDir, { recursive: true });
     this.dbPath = path.join(dataDir, 'oxygengym.db');
-    this.backupDir = path.join(path.dirname(dataDir), 'backups');
     this.open();
   }
 
@@ -91,6 +107,7 @@ class DB {
     this.db.pragma('foreign_keys = ON');
     this.createBaseSchema();
     this.migrate();
+    i18n.setLanguage(this.getSettings().language);
   }
 
   close() {
@@ -155,13 +172,24 @@ class DB {
     if (current > SCHEMA_VERSION) {
       fail("Ma'lumotlar bazasi dasturning yangiroq versiyasida yaratilgan. Dasturni yangilang");
     }
-    const steps = [[2, () => this.migrateToV2()], [3, () => this.migrateToV3()]];
+    const steps = [[2, () => this.migrateToV2()], [3, () => this.migrateToV3()], [4, () => this.migrateToV4()]];
     steps.forEach(([version, run]) => {
       if (current >= version) return;
       this.db.transaction(run)();
       this.db.pragma(`user_version = ${version}`);
       if (this.logger.info) this.logger.info(`Database migrated to v${version}`);
     });
+  }
+
+  migrateToV4() {
+    // Telefon raqamlarini yagona "+998 xx xxx xx xx" ko'rinishiga keltiramiz (tanib bo'lmaganlari o'zgarmaydi)
+    const rows = this.db.prepare('SELECT id, phone FROM customers WHERE phone IS NOT NULL').all();
+    const upd = this.db.prepare('UPDATE customers SET phone = ? WHERE id = ?');
+    rows.forEach((r) => {
+      const d = phoneDigits(r.phone);
+      if (d.length === 9) upd.run(formatPhone(d), r.id);
+    });
+    this.db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('language', 'uz')").run();
   }
 
   migrateToV3() {
@@ -355,6 +383,7 @@ class DB {
       allowDebt: 'true',
       lowStockAlert: '3',
       expiryAlertDays: '30',
+      language: 'uz',
     };
     const insert = this.db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
     Object.entries(defaults).forEach(([k, v]) => insert.run(k, v));
@@ -474,8 +503,8 @@ class DB {
     const row = this.db.prepare('SELECT id, name, is_active FROM products WHERE code = ? AND id <> ?').get(code, exceptId || 0);
     if (row) {
       fail(row.is_active
-        ? `"${code}" kodi "${row.name}" mahsulotida ishlatilgan`
-        : `"${code}" kodi arxivdagi "${row.name}" mahsulotiga tegishli. Uni arxivdan qaytaring yoki boshqa kod kiriting`);
+        ? '"{code}" kodi "{name}" mahsulotida ishlatilgan'
+        : '"{code}" kodi arxivdagi "{name}" mahsulotiga tegishli. Uni arxivdan qaytaring yoki boshqa kod kiriting', { code, name: row.name });
     }
   }
 
@@ -556,8 +585,8 @@ class DB {
       ? this.db.prepare('SELECT * FROM product_batches WHERE id = ? AND product_id = ? AND remaining > 0').all(batchId, productId)
       : this.db.prepare(`SELECT * FROM product_batches WHERE product_id = ? AND remaining > 0
           ORDER BY (expiry_date IS NULL), expiry_date, id`).all(productId);
-    if (batchId && !batches.length) fail('Partiya topilmadi yoki qoldig\'i yo\'q');
-    if (batchId && batches[0].remaining < qty) fail(`Bu partiyada faqat ${batches[0].remaining} dona bor`);
+    if (batchId && !batches.length) fail("Partiya topilmadi yoki qoldig'i yo'q");
+    if (batchId && batches[0].remaining < qty) fail('Bu partiyada faqat {qty} dona bor', { qty: batches[0].remaining });
     const take = this.db.prepare('UPDATE product_batches SET remaining = remaining - ? WHERE id = ?');
     batches.forEach((b) => {
       if (rest <= 0) return;
@@ -576,7 +605,7 @@ class DB {
       if (!p) fail('Mahsulot topilmadi');
       const qty = toInt(input.quantity);
       if (qty <= 0) fail('Miqdorni kiriting');
-      if (qty > p.stock) fail(`Omborda faqat ${p.stock} ${p.unit || 'dona'} bor`);
+      if (qty > p.stock) fail('Omborda faqat {qty} {unit} bor', { qty: p.stock, unit: i18n.unit(p.unit) });
       const reason = opt(input.reason);
       if (!reason) fail('Sababini yozing');
       const ts = now();
@@ -652,15 +681,15 @@ class DB {
         const product = getProduct.get(it.product_id);
         if (!product) fail('Mahsulot topilmadi');
         const qty = toInt(it.quantity);
-        if (qty <= 0 || Number(it.quantity) !== qty) fail(`"${product.name}": miqdor musbat butun son bo'lishi kerak`);
+        if (qty <= 0 || Number(it.quantity) !== qty) fail("\"{name}\": miqdor musbat butun son bo'lishi kerak", { name: product.name });
         const cost = toInt(it.cost_price);
-        if (cost < 0) fail(`"${product.name}": tannarx manfiy bo'lishi mumkin emas`);
+        if (cost < 0) fail("\"{name}\": tannarx manfiy bo'lishi mumkin emas", { name: product.name });
         const expiry = opt(it.expiry_date);
-        if (expiry && !/^\d{4}-\d{2}-\d{2}$/.test(expiry)) fail(`"${product.name}": sana formati noto'g'ri`);
-        if (expiry && expiry < today) fail(`"${product.name}": yaroqlilik muddati o'tib ketgan (${expiry})`);
+        if (expiry && !/^\d{4}-\d{2}-\d{2}$/.test(expiry)) fail("\"{name}\": sana formati noto'g'ri", { name: product.name });
+        if (expiry && expiry < today) fail("\"{name}\": yaroqlilik muddati o'tib ketgan ({date})", { name: product.name, date: expiry });
         const hasSell = it.sell_price !== undefined && it.sell_price !== null && it.sell_price !== '';
         const sell = hasSell ? toInt(it.sell_price) : null;
-        if (hasSell && sell <= 0) fail(`"${product.name}": sotuv narxi noto'g'ri`);
+        if (hasSell && sell <= 0) fail("\"{name}\": sotuv narxi noto'g'ri", { name: product.name });
         return { product, qty, cost, expiry, sell };
       });
 
@@ -725,7 +754,7 @@ class DB {
       const batches = this.db.prepare('SELECT * FROM product_batches WHERE receipt_id = ?').all(id);
       const used = batches.reduce((s, b) => s + (b.quantity - b.remaining), 0);
       if (used > 0) {
-        fail(`Bu kirimdan ${used} dona sotilgan yoki hisobdan chiqarilgan, bekor qilib bo'lmaydi. Ortiqcha qismini mahsulot kartasidagi "Qoldiqni tuzatish" orqali to'g'rilang`);
+        fail("Bu kirimdan {qty} dona sotilgan yoki hisobdan chiqarilgan, bekor qilib bo'lmaydi. Ortiqcha qismini mahsulot kartasidagi \"Qoldiqni tuzatish\" orqali to'g'rilang", { qty: used });
       }
       const ts = now();
       const updStock = this.db.prepare('UPDATE products SET stock = stock - ?, updated_at = ? WHERE id = ?');
@@ -758,8 +787,15 @@ class DB {
     if (filters.status === 'advance') where += ' AND c.balance > 0';
     const q = opt(filters.search);
     if (q) {
-      where += ' AND (c.name LIKE ? OR c.phone LIKE ?)';
-      params.push(`%${q}%`, `%${q}%`);
+      // Telefon bo'yicha bo'shliqsiz qidiramiz: "33313" → "+998 33 313 44 22"
+      const digits = q.replace(/\D/g, '');
+      if (digits.length >= 2) {
+        where += " AND (c.name LIKE ? OR REPLACE(REPLACE(REPLACE(COALESCE(c.phone, ''), ' ', ''), '-', ''), '+', '') LIKE ?)";
+        params.push(`%${q}%`, `%${digits}%`);
+      } else {
+        where += ' AND c.name LIKE ?';
+        params.push(`%${q}%`);
+      }
     }
     const order = filters.status === 'debt' ? 'c.balance ASC' : 'c.name COLLATE NOCASE';
     return this.db.prepare(`${this.customerSelect()} ${where} ORDER BY ${order} LIMIT ${toInt(filters.limit) || 1000}`).all(...params);
@@ -803,16 +839,23 @@ class DB {
     const hasLimit = input.debt_limit !== null && input.debt_limit !== undefined && input.debt_limit !== '';
     const debtLimit = hasLimit ? toInt(input.debt_limit) : null;
     if (debtLimit !== null && debtLimit < 0) fail("Qarz limiti manfiy bo'lishi mumkin emas");
-    return { name, phone: opt(input.phone), notes: opt(input.notes), debt_limit: debtLimit };
+    return { name, phone: this.normalizePhone(input.phone), notes: opt(input.notes), debt_limit: debtLimit };
+  }
+
+  normalizePhone(value) {
+    const d = phoneDigits(value);
+    if (!d) return null;
+    if (d.length !== 9) fail("Telefon raqami to'liq emas: +998 dan keyin 9 ta raqam kiriting");
+    return formatPhone(d);
   }
 
   ensurePhoneFree(phone, exceptId) {
     if (!phone) return;
-    const key = phone.replace(/\D/g, '').slice(-9);
+    const key = phoneDigits(phone).slice(-9);
     if (key.length < 7) return;
     const rows = this.db.prepare('SELECT id, name, phone FROM customers WHERE is_active = 1 AND id <> ? AND phone IS NOT NULL').all(exceptId || 0);
-    const dup = rows.find((r) => r.phone.replace(/\D/g, '').slice(-9) === key);
-    if (dup) fail(`Bu telefon raqami "${dup.name}" mijoziga biriktirilgan`);
+    const dup = rows.find((r) => phoneDigits(r.phone).slice(-9) === key);
+    if (dup) fail('Bu telefon raqami "{name}" mijoziga biriktirilgan', { name: dup.name });
   }
 
   // Har bir pul harakati shu yerdan o'tadi: balans yangilanadi va jurnalga yoziladi
@@ -869,9 +912,8 @@ class DB {
   deleteCustomer(id) {
     const c = this.getActiveCustomer(id);
     if (toInt(c.balance) !== 0) {
-      fail(c.balance < 0
-        ? `Mijozning ${fmt(-c.balance)} qarzi bor. Avval hisobni yoping`
-        : `Mijoz hisobida ${fmt(c.balance)} avans bor. Avval pulni qaytaring`);
+      fail(c.balance < 0 ? 'Mijozning {amount} qarzi bor. Avval hisobni yoping' : 'Mijoz hisobida {amount} avans bor. Avval pulni qaytaring',
+        { amount: money(Math.abs(c.balance)) });
     }
     this.db.prepare('UPDATE customers SET is_active = 0, updated_at = ? WHERE id = ?').run(now(), id);
     this.log('DELETE', 'customer', id, `Mijoz arxivlandi: ${c.name}`);
@@ -908,7 +950,7 @@ class DB {
       const c = this.getActiveCustomer(id);
       const amount = toInt(input.amount);
       if (amount <= 0) fail('Summani kiriting');
-      if (amount > toInt(c.balance)) fail(`Mijoz hisobida faqat ${fmt(Math.max(0, c.balance))} bor`);
+      if (amount > toInt(c.balance)) fail('Mijoz hisobida faqat {amount} bor', { amount: money(Math.max(0, c.balance)) });
       const method = MONEY_METHODS.includes(input.method) ? input.method : 'cash';
       const tx = this.addCustomerTx(id, 'withdraw', -amount, method, null, opt(input.note) || 'Avans mijozga qaytarildi');
       this.log('PAYMENT_OUT', 'customer', id, `${c.name}: −${fmt(amount)} (${method}). Balans: ${fmt(tx.balance_after)}`);
@@ -954,8 +996,8 @@ class DB {
         const sellable = Math.max(0, p.stock - p.expired_qty);
         if (sellable < qty) {
           fail(p.expired_qty > 0 && p.stock >= qty
-            ? `"${p.name}": ${p.expired_qty} donasining yaroqlilik muddati o'tgan. Sotish mumkin: ${sellable} ${p.unit || 'dona'}`
-            : `"${p.name}" omborda yetarli emas. Qoldiq: ${sellable} ${p.unit || 'dona'}`);
+            ? "\"{name}\": {expired} donasining yaroqlilik muddati o'tgan. Sotish mumkin: {qty} {unit}"
+            : '"{name}" omborda yetarli emas. Qoldiq: {qty} {unit}', { name: p.name, expired: p.expired_qty, qty: sellable, unit: i18n.unit(p.unit) });
         }
         const price = toInt(p.sell_price);
         lines.push({ p, qty, price });
@@ -970,7 +1012,7 @@ class DB {
       const finalTotal = subtotal - discountAmount;
       // Savatcha ochilgandan keyin narx o'zgargan bo'lsa, kassir eski summa bilan pul olmasligi uchun
       if (input.expected_total !== undefined && input.expected_total !== null && toInt(input.expected_total) !== finalTotal) {
-        fail(PRICE_CHANGED);
+        fail(PRICE_CHANGED, null, 'PRICE_CHANGED');
       }
 
       const customer = input.customer_id ? this.getActiveCustomer(input.customer_id) : null;
@@ -987,7 +1029,7 @@ class DB {
       if (balanceUsed < 0) fail("Hisobdan yechiladigan summa noto'g'ri");
       if (balanceUsed > 0) {
         if (!customer) fail('Hisobdan yechish uchun mijozni tanlang');
-        if (balanceUsed > Math.max(0, toInt(customer.balance))) fail(`Mijoz hisobida faqat ${fmt(Math.max(0, customer.balance))} bor`);
+        if (balanceUsed > Math.max(0, toInt(customer.balance))) fail('Mijoz hisobida faqat {amount} bor', { amount: money(Math.max(0, customer.balance)) });
         if (balanceUsed > finalTotal) fail('Hisobdan yechiladigan summa sotuv summasidan katta');
       }
 
@@ -1017,9 +1059,8 @@ class DB {
         if (settings.allowDebt === 'false') fail("Qarzga sotish sozlamalarda o'chirilgan");
         const after = toInt(customer.balance) - balanceUsed - debt;
         if (customer.debt_limit !== null && customer.debt_limit !== undefined && -after > customer.debt_limit) {
-          fail(toInt(customer.debt_limit) === 0
-            ? 'Bu mijozga qarzga sotish taqiqlangan'
-            : `Qarz limiti oshadi. Limit: ${fmt(customer.debt_limit)}, sotuvdan keyingi qarz: ${fmt(-after)}`);
+          fail(toInt(customer.debt_limit) === 0 ? 'Bu mijozga qarzga sotish taqiqlangan' : 'Qarz limiti oshadi. Limit: {limit}, sotuvdan keyingi qarz: {debt}',
+            { limit: money(customer.debt_limit), debt: money(-after) });
         }
       }
       const changeToBalance = change > 0 && input.change_to_balance ? change : 0;
@@ -1161,9 +1202,9 @@ class DB {
       const picks = [];
       wanted.forEach((qty, pid) => {
         const own = rows.filter((r) => r.product_id === pid);
-        if (!own.length) fail('Bu mahsulot ushbu sotuvda yo\'q');
+        if (!own.length) fail("Bu mahsulot ushbu sotuvda yo'q");
         const available = own.reduce((s, r) => s + r.quantity - r.returned_qty, 0);
-        if (qty > available) fail(`"${own[0].name}": qaytarish mumkin bo'lgan miqdor ${available}`);
+        if (qty > available) fail("\"{name}\": qaytarish mumkin bo'lgan miqdor {qty}", { name: own[0].name, qty: available });
         let rest = qty;
         own.forEach((r) => {
           const n = Math.min(rest, r.quantity - r.returned_qty);
@@ -1221,17 +1262,18 @@ class DB {
   getCashflow(filters = {}) {
     const [from, to] = range(filters);
     const rows = this.db.prepare(`
-      SELECT d, method, SUM(amount) AS amount FROM (
-        SELECT date(s.created_at) AS d, sp.method AS method, sp.amount AS amount
+      SELECT d, method, source, SUM(amount) AS amount FROM (
+        SELECT date(s.created_at) AS d, sp.method AS method, 'sales' AS source, sp.amount AS amount
           FROM sale_payments sp JOIN sales s ON s.id = sp.sale_id
           WHERE sp.method IN ('cash','card','click','payme') AND date(s.created_at) BETWEEN @from AND @to
         UNION ALL
-        SELECT date(created_at), method, amount FROM customer_transactions
+        SELECT date(created_at), method, CASE WHEN type = 'deposit' THEN 'deposits' ELSE 'withdrawals' END, amount
+          FROM customer_transactions
           WHERE type IN ('deposit','withdraw') AND method IN ('cash','card','click','payme') AND date(created_at) BETWEEN @from AND @to
         UNION ALL
-        SELECT date(created_at), 'cash', -cash_back FROM sale_returns
+        SELECT date(created_at), 'cash', 'refunds', -cash_back FROM sale_returns
           WHERE cash_back > 0 AND date(created_at) BETWEEN @from AND @to
-      ) GROUP BY d, method
+      ) GROUP BY d, method, source
     `).all({ from, to });
     const debts = this.db.prepare(`
       SELECT date(created_at) AS d, SUM(debt_amount) AS debt FROM sales
@@ -1243,14 +1285,21 @@ class DB {
       if (!byDate.has(d)) byDate.set(d, { date: d, cash: 0, card: 0, click: 0, payme: 0, total: 0, debt: 0 });
       return byDate.get(d);
     };
-    rows.forEach((r) => { const x = row(r.d); x[r.method] += r.amount; x.total += r.amount; });
+    // Kassa = sotuvdan tushgan pul + mijozlar to'lovlari (avans, qarz to'lovi) − mijozga qaytarilgan pul
+    const sources = { sales: 0, deposits: 0, withdrawals: 0, refunds: 0 };
+    rows.forEach((r) => {
+      const x = row(r.d);
+      x[r.method] += r.amount;
+      x.total += r.amount;
+      sources[r.source] += r.amount;
+    });
     debts.forEach((r) => { row(r.d).debt += r.debt; });
     const list = Array.from(byDate.values()).sort((a, b) => b.date.localeCompare(a.date));
     const totals = list.reduce((t, r) => {
       ['cash', 'card', 'click', 'payme', 'total', 'debt'].forEach((k) => { t[k] += r[k]; });
       return t;
     }, { cash: 0, card: 0, click: 0, payme: 0, total: 0, debt: 0 });
-    return { rows: list, totals };
+    return { rows: list, totals, sources };
   }
 
   getDashboardStats() {
@@ -1309,7 +1358,10 @@ class DB {
     return {
       today: period(today),
       month: period(monthStart),
-      cashToday: this.getCashflow({ dateFrom: today, dateTo: today }).totals.total,
+      cashToday: (() => {
+        const cf = this.getCashflow({ dateFrom: today, dateTo: today });
+        return { total: cf.totals.total, ...cf.sources };
+      })(),
       inventory: { ...inventory, month_loss: monthLoss },
       customers: this.getCustomerSummary(),
       topProducts,
@@ -1364,13 +1416,22 @@ class DB {
     return this.db.prepare('SELECT key, value FROM settings').all().reduce((o, r) => { o[r.key] = r.value; return o; }, {});
   }
 
+  setLanguage(lang) {
+    if (!i18n.LANGS.includes(lang)) return this.getSettings();
+    this.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('language', ?)").run(lang);
+    i18n.setLanguage(lang);
+    return this.getSettings();
+  }
+
   updateSettings(input = {}) {
     const upsert = this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
     this.db.transaction(() => {
       SETTING_KEYS.forEach((k) => { if (input[k] !== undefined) upsert.run(k, String(input[k])); });
       this.log('SETTINGS', 'system', null, 'Sozlamalar yangilandi');
     })();
-    return this.getSettings();
+    const settings = this.getSettings();
+    i18n.setLanguage(settings.language);
+    return settings;
   }
 
   getAuditLog(filters = {}) {
@@ -1381,72 +1442,6 @@ class DB {
     const q = opt(filters.search);
     if (q) { where += ' AND details LIKE ?'; params.push(`%${q}%`); }
     return this.db.prepare(`SELECT * FROM audit_log ${where} ORDER BY id DESC LIMIT 1000`).all(...params);
-  }
-
-  // ================= BACKUP =================
-
-  async createBackup(filePath) {
-    await this.db.backup(filePath);
-    this.log('BACKUP', 'system', null, `Zaxira nusxa: ${filePath}`);
-    return { path: filePath };
-  }
-
-  async autoBackup(keep = 14) {
-    fs.mkdirSync(this.backupDir, { recursive: true });
-    const file = path.join(this.backupDir, `oxygengym-${todayStr()}.db`);
-    if (!fs.existsSync(file)) await this.db.backup(file);
-    const files = fs.readdirSync(this.backupDir).filter((f) => /^oxygengym-\d{4}-\d{2}-\d{2}\.db$/.test(f)).sort();
-    files.slice(0, Math.max(0, files.length - keep)).forEach((f) => fs.unlinkSync(path.join(this.backupDir, f)));
-    return file;
-  }
-
-  getBackupInfo() {
-    if (!fs.existsSync(this.backupDir)) return { dir: this.backupDir, files: [] };
-    const files = fs.readdirSync(this.backupDir)
-      .filter((f) => f.endsWith('.db'))
-      .map((f) => {
-        const st = fs.statSync(path.join(this.backupDir, f));
-        return { name: f, size: st.size, modified: st.mtime.toISOString() };
-      })
-      .sort((a, b) => b.modified.localeCompare(a.modified));
-    return { dir: this.backupDir, files };
-  }
-
-  async restoreBackup(filePath) {
-    let probe = null;
-    let valid = false;
-    let version = 0;
-    try {
-      probe = new Database(filePath, { readonly: true, fileMustExist: true });
-      valid = Boolean(probe.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'products'").get())
-        && probe.pragma('integrity_check', { simple: true }) === 'ok';
-      version = probe.pragma('user_version', { simple: true });
-    } catch (err) {
-      valid = false;
-    } finally {
-      if (probe) probe.close();
-    }
-    if (!valid) fail("Bu fayl OxygenGym zaxira nusxasi emas yoki buzilgan");
-    if (version > SCHEMA_VERSION) fail('Bu nusxa dasturning yangiroq versiyasida olingan. Avval dasturni yangilang');
-
-    fs.mkdirSync(this.backupDir, { recursive: true });
-    const safety = path.join(this.backupDir, `before-restore-${Date.now()}.db`);
-    await this.db.backup(safety);
-    const swap = (source) => {
-      this.close();
-      ['-wal', '-shm'].forEach((ext) => { if (fs.existsSync(this.dbPath + ext)) fs.unlinkSync(this.dbPath + ext); });
-      fs.copyFileSync(source, this.dbPath);
-      this.open();
-    };
-    try {
-      swap(filePath);
-    } catch (err) {
-      // Tiklash yoki migratsiya muvaffaqiyatsiz bo'lsa, oldingi holatga qaytamiz
-      swap(safety);
-      fail(`Tiklab bo'lmadi: ${err.message}. Oldingi ma'lumotlar saqlab qolindi`);
-    }
-    this.log('RESTORE', 'system', null, `Zaxira nusxadan tiklandi: ${filePath}`);
-    return true;
   }
 }
 

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
+import { t } from '../lib/i18n';
 
 // Ochiq oynalar steki: Esc faqat eng ustidagi oynani yopadi
 const stack = [];
@@ -33,7 +34,7 @@ export default function Modal({ title, subtitle, onClose, size = 'md', footer, c
             {subtitle && <p className="modal-subtitle">{subtitle}</p>}
           </div>
           {onClose && (
-            <button type="button" className="btn btn-ghost btn-icon" onClick={onClose} aria-label="Yopish">
+            <button type="button" className="btn btn-ghost btn-icon" onClick={onClose} aria-label={t('Yopish')}>
               <X size={18} />
             </button>
           )}

@@ -5,7 +5,8 @@ import { EmptyState, PageHeader, SearchInput, Segmented, StatCard } from '../com
 import CustomerForm from '../components/CustomerForm';
 import CustomerDetail from '../components/CustomerDetail';
 import CustomerMoneyModal from '../components/CustomerMoneyModal';
-import { balanceState, fmtDateTime, initials, money, som } from '../lib/format';
+import { balanceState, currency, fmtDateTime, initials, money, som } from '../lib/format';
+import { t } from '../lib/i18n';
 
 export default function Customers() {
   const [list, setList] = useState([]);
@@ -32,7 +33,7 @@ export default function Customers() {
   async function restore(c) {
     try {
       await window.api.customers.restore(c.id);
-      toast.success(`"${c.name}" arxivdan qaytarildi`);
+      toast.success(t('"{name}" arxivdan qaytarildi', { name: c.name }));
       load();
     } catch (err) {
       toast.error(err.message);
@@ -40,31 +41,31 @@ export default function Customers() {
   }
 
   useEffect(() => {
-    const t = setTimeout(load, 120);
-    return () => clearTimeout(t);
+    const timer = setTimeout(load, 120);
+    return () => clearTimeout(timer);
   }, [load]);
 
   return (
     <>
       <PageHeader
-        title="Mijozlar"
-        subtitle="Mijoz hisoblari: avans, qarz va to'lovlar tarixi"
-        actions={<button type="button" className="btn btn-primary" onClick={() => setCreating(true)}><UserPlus size={16} />Yangi mijoz</button>}
+        title={t('Mijozlar')}
+        subtitle={t("Mijoz hisoblari: avans, qarz va to'lovlar tarixi")}
+        actions={<button type="button" className="btn btn-primary" onClick={() => setCreating(true)}><UserPlus size={16} />{t('Yangi mijoz')}</button>}
       />
       <div className="content">
         {summary && (
           <div className="stat-grid">
-            <StatCard label="Mijozlar" value={summary.count} unit="ta" icon={Users} tone="primary" />
-            <StatCard label="Jami qarz" value={money(summary.total_debt)} unit="so'm" hint={`${summary.debtors || 0} ta qarzdor`} icon={HandCoins} tone={summary.total_debt ? 'danger' : 'neutral'} onClick={() => setStatus('debt')} />
-            <StatCard label="Jami avans" value={money(summary.total_advance)} unit="so'm" hint={`${summary.with_advance || 0} ta mijozda`} icon={Wallet} tone="success" onClick={() => setStatus('advance')} />
-            <StatCard label="Sof holat" value={money(summary.total_advance - summary.total_debt)} unit="so'm" hint="Avans minus qarz" icon={ArrowDownLeft} />
+            <StatCard label={t('Mijozlar')} value={summary.count} unit={t('ta')} icon={Users} tone="primary" />
+            <StatCard label={t('Jami qarz')} value={money(summary.total_debt)} unit={currency()} hint={t('{n} ta qarzdor', { n: summary.debtors || 0 })} icon={HandCoins} tone={summary.total_debt ? 'danger' : 'neutral'} onClick={() => setStatus('debt')} />
+            <StatCard label={t('Jami avans')} value={money(summary.total_advance)} unit={currency()} hint={t('{n} ta mijozda', { n: summary.with_advance || 0 })} icon={Wallet} tone="success" onClick={() => setStatus('advance')} />
+            <StatCard label={t('Sof holat')} value={money(summary.total_advance - summary.total_debt)} unit={currency()} hint={t('Avans minus qarz')} icon={ArrowDownLeft} />
           </div>
         )}
 
         <div className="toolbar">
-          <SearchInput value={query} onChange={setQuery} placeholder="Ism yoki telefon raqami" />
+          <SearchInput value={query} onChange={setQuery} placeholder={t('Ism yoki telefon raqami')} />
           <Segmented
-            options={[{ id: 'all', label: 'Hammasi' }, { id: 'debt', label: 'Qarzdorlar' }, { id: 'advance', label: 'Avansi borlar' }, { id: 'archived', label: 'Arxiv' }]}
+            options={[{ id: 'all', label: t('Hammasi') }, { id: 'debt', label: t('Qarzdorlar') }, { id: 'advance', label: t('Avansi borlar') }, { id: 'archived', label: t('Arxiv') }]}
             value={status}
             onChange={setStatus}
           />
@@ -74,16 +75,16 @@ export default function Customers() {
           {list.length === 0 ? (
             <EmptyState
               icon={Users}
-              title={status === 'debt' ? "Qarzdor mijoz yo'q" : status === 'advance' ? "Avansi bor mijoz yo'q" : status === 'archived' ? "Arxiv bo'sh" : 'Mijoz topilmadi'}
-              text="Mijoz qo'shganda uning bergan pulini yoki eski qarzini darhol kiritish mumkin"
-              action={status === 'all' && !query && <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}><UserPlus size={16} />Mijoz qo'shish</button>}
+              title={status === 'debt' ? t("Qarzdor mijoz yo'q") : status === 'advance' ? t("Avansi bor mijoz yo'q") : status === 'archived' ? t("Arxiv bo'sh") : t('Mijoz topilmadi')}
+              text={t("Mijoz qo'shganda uning bergan pulini yoki eski qarzini darhol kiritish mumkin")}
+              action={status === 'all' && !query && <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}><UserPlus size={16} />{t("Mijoz qo'shish")}</button>}
             />
           ) : (
             <table className="table">
               <thead>
                 <tr>
-                  <th>Mijoz</th><th>Telefon</th><th className="num">Hisob</th><th>Qarz limiti</th>
-                  <th className="num">Xaridlar</th><th>So'nggi harakat</th><th className="actions" />
+                  <th>{t('Mijoz')}</th><th>{t('Telefon')}</th><th className="num">{t('Hisob')}</th><th>{t('Qarz limiti')}</th>
+                  <th className="num">{t('Xaridlar')}</th><th>{t("So'nggi harakat")}</th><th className="actions" />
                 </tr>
               </thead>
               <tbody>
@@ -97,20 +98,20 @@ export default function Customers() {
                           <div><div className="cell-title">{c.name}</div>{c.notes && <div className="cell-sub" style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.notes}</div>}</div>
                         </div>
                       </td>
-                      <td className="secondary nowrap">{c.phone || '—'}</td>
+                      <td className="secondary nowrap tnum">{c.phone || '—'}</td>
                       <td className="num">
                         <div className={b.cls}>{b.amount ? som(b.amount) : '—'}</div>
-                        <div className="cell-sub">{b.amount ? b.label : 'Hisob nol'}</div>
+                        <div className="cell-sub">{b.label}</div>
                       </td>
-                      <td className="secondary">{c.debt_limit === null ? 'Cheklovsiz' : Number(c.debt_limit) === 0 ? 'Qarz berilmaydi' : som(c.debt_limit)}</td>
-                      <td className="num"><div>{c.purchases_count} ta</div><div className="cell-sub">{money(c.purchases_total)}</div></td>
+                      <td className="secondary">{c.debt_limit === null ? t('Cheklovsiz') : Number(c.debt_limit) === 0 ? t('Qarz berilmaydi') : som(c.debt_limit)}</td>
+                      <td className="num"><div>{t('{n} ta', { n: c.purchases_count })}</div><div className="cell-sub">{money(c.purchases_total)}</div></td>
                       <td className="secondary nowrap">{c.last_activity ? fmtDateTime(c.last_activity) : '—'}</td>
                       <td className="actions" onClick={(e) => e.stopPropagation()}>
                         {status === 'archived' ? (
-                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => restore(c)}><ArchiveRestore size={14} />Qaytarish</button>
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => restore(c)}><ArchiveRestore size={14} />{t('Qaytarish')}</button>
                         ) : (
                           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPaying(c)}>
-                            <ArrowDownLeft size={14} />{c.balance < 0 ? "Qarz to'lovi" : "To'lov"}
+                            <ArrowDownLeft size={14} />{c.balance < 0 ? t("Qarz to'lovi") : t("To'lov")}
                           </button>
                         )}
                       </td>
