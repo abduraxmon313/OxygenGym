@@ -11,6 +11,14 @@ on:
 permissions:
   contents: write
 
+# Ketma-ket bir nechta push bo'lsa build'lar navbat bilan ishlaydi.
+# Ikkinchisi tekshiruvda release allaqachon borligini ko'rib, o'tkazib yuboriladi.
+# Aks holda ikkita build bitta release fayllarini almashtirib, dasturlarda
+# "sha512 checksum mismatch" xatosini keltirib chiqaradi.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-latest

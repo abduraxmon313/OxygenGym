@@ -75,13 +75,18 @@ autoUpdater.logger = log;
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 
-autoUpdater.on('update-available', (info) => send('update:available', { version: info.version }));
+let downloading = false;
+autoUpdater.on('update-available', (info) => { if (!downloading) send('update:available', { version: info.version }); });
 autoUpdater.on('update-not-available', () => send('update:not-available'));
 autoUpdater.on('download-progress', (p) => send('update:progress', { percent: Math.round(p.percent) }));
-autoUpdater.on('update-downloaded', (info) => send('update:downloaded', { version: info.version }));
+autoUpdater.on('update-downloaded', (info) => {
+  downloading = false;
+  send('update:downloaded', { version: info.version });
+});
 autoUpdater.on('error', (err) => {
   log.warn('Updater error:', err && err.message);
-  send('update:error', { message: (err && err.message) || 'Noma\'lum xatolik' });
+  // Yuklab olish xatolari downloadUpdate() ichida (qayta urinish bilan) ko'rsatiladi
+  if (!downloading) send('update:error', { message: (err && err.message) || 'Noma\'lum xatolik' });
 });
 
 function checkForUpdates() {
@@ -108,8 +113,30 @@ handle('updates:check', async () => {
   const latest = result && result.updateInfo ? result.updateInfo.version : null;
   return { available: Boolean(latest && isNewer(latest, app.getVersion())), latest, current: app.getVersion() };
 });
+// Nazorat summasi mos kelmasa (masalan, release fayllari yuklanayotgan paytda yangilanish boshlangan bo'lsa)
+// bir marta qisman (differential) emas, to'liq yuklab olib qayta urinamiz.
+let downloadRetried = false;
+function downloadUpdate() {
+  return autoUpdater.downloadUpdate().catch((err) => {
+    const message = (err && err.message) || '';
+    if (!downloadRetried && /sha512|checksum/i.test(message)) {
+      downloadRetried = true;
+      log.warn('Checksum mismatch, retrying full download');
+      autoUpdater.disableDifferentialDownload = true;
+      return autoUpdater.checkForUpdates().then(() => downloadUpdate());
+    }
+    downloading = false;
+    send('update:error', { message: /sha512|checksum/i.test(message)
+      ? "Yuklangan fayl buzilgan. Birozdan keyin dasturni qayta ochib, yana urinib ko'ring"
+      : message });
+    return null;
+  });
+}
+
 handle('updates:download', () => {
-  autoUpdater.downloadUpdate().catch((err) => send('update:error', { message: err.message }));
+  downloadRetried = false;
+  downloading = true;
+  downloadUpdate();
   return true;
 });
 handle('updates:install', () => {
